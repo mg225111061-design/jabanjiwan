@@ -3,9 +3,15 @@ name = "jeff-recognizer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-recognizer (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Layer 0 recognizer: dispatch tags + cost + the Collapser trait (CLAUDE.md PART 6.3/6.4, 10.1). Stage-0 uses direct pattern recognition; egglog equality-saturation is the Stage-2 plan."
 
 [dependencies]
+jeff-cert = { workspace = true }
+jeff-core-ir = { workspace = true }
+jeff-span = { workspace = true }
+
+[dev-dependencies]
+jeff-syntax = { workspace = true }
 
 [lints]
 workspace = true

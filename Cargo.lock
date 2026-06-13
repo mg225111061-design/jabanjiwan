@@ -43,6 +43,19 @@ version = "0.1.0"
 [[package]]
 name = "jeff-collapse-arith"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-core-ir",
+ "jeff-math",
+ "jeff-recognizer",
+ "jeff-span",
+ "jeff-syntax",
+ "jeff-verify",
+ "num-bigint",
+ "num-integer",
+ "num-rational",
+ "num-traits",
+]
 
 [[package]]
 name = "jeff-collapse-gf2"
@@ -59,6 +72,12 @@ version = "0.1.0"
 [[package]]
 name = "jeff-core-ir"
 version = "0.1.0"
+dependencies = [
+ "jeff-span",
+ "jeff-syntax",
+ "num-bigint",
+ "num-traits",
+]
 
 [[package]]
 name = "jeff-jlir"
@@ -78,6 +97,12 @@ dependencies = [
 [[package]]
 name = "jeff-recognizer"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-core-ir",
+ "jeff-span",
+ "jeff-syntax",
+]
 
 [[package]]
 name = "jeff-span"

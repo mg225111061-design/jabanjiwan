@@ -3,9 +3,13 @@ name = "jeff-core-ir"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-core-ir (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Typed core IR + lowering from surface AST + an exact evaluator (CLAUDE.md PART 8, B.3). The evaluator is the naive-correct reference and the fallback executor (AR-4, P0)."
 
 [dependencies]
+jeff-span = { workspace = true }
+jeff-syntax = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
 
 [lints]
 workspace = true

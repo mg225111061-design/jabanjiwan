@@ -378,6 +378,15 @@ impl UniPoly {
         UniPoly::from_coeffs(self.coeffs.iter().map(|c| c * k).collect())
     }
 
+    /// `self ** e` for a small non-negative exponent.
+    pub fn pow(&self, e: u32) -> UniPoly {
+        let mut acc = UniPoly::constant(BigRational::one());
+        for _ in 0..e {
+            acc = acc.mul(self);
+        }
+        acc
+    }
+
     pub fn eval(&self, x: &BigRational) -> BigRational {
         // Horner
         let mut acc = BigRational::zero();
@@ -452,6 +461,29 @@ impl UniPoly {
         a
     }
 
+    /// Exact Lagrange interpolation through `(x_j, y_j)` with distinct `x_j`.
+    /// Returns the unique polynomial of degree `< points.len()` over `Q`. Used to
+    /// derive a closed form from naively-sampled values (AR-4): sample the sum at
+    /// enough points, interpolate, then *prove* the result by a polynomial identity.
+    pub fn interpolate(points: &[(BigRational, BigRational)]) -> UniPoly {
+        let mut result = UniPoly::zero();
+        for (j, (xj, yj)) in points.iter().enumerate() {
+            let mut term = UniPoly::constant(yj.clone());
+            for (m, (xm, _)) in points.iter().enumerate() {
+                if m == j {
+                    continue;
+                }
+                let denom = xj - xm; // nonzero since x's are distinct
+                // (x - x_m) / (x_j - x_m)
+                let factor =
+                    UniPoly::from_coeffs(vec![-xm.clone(), BigRational::one()]).scale(&(BigRational::one() / denom));
+                term = term.mul(&factor);
+            }
+            result = result.add(&term);
+        }
+        result
+    }
+
     /// Convert to a multivariate [`Poly`] in the given variable name (for plugging
     /// univariate results into the identity checker).
     pub fn to_multivar(&self, var: &str) -> Poly {
@@ -517,6 +549,22 @@ mod tests {
         let g = p.gcd(&d);
         // gcd is monic associate of (x-1)
         assert_eq!(g.degree(), Some(1));
+    }
+
+    #[test]
+    fn interpolate_recovers_triangular_closed_form() {
+        // sum_{i=0}^{m} i has closed form m(m+1)/2; values 0,1,3,6 at m=0,1,2,3.
+        let pts: Vec<(BigRational, BigRational)> = [(0, 0), (1, 1), (2, 3), (3, 6)]
+            .iter()
+            .map(|&(x, y)| (r(x), r(y)))
+            .collect();
+        let s = UniPoly::interpolate(&pts);
+        // S(10) must be 55
+        assert_eq!(s.eval(&r(10)), r(55));
+        // S(n) = (n^2 + n)/2: coeff of n^2 is 1/2, of n is 1/2, const 0
+        assert_eq!(s.coeff(2), BigRational::new(BigInt::from(1), BigInt::from(2)));
+        assert_eq!(s.coeff(1), BigRational::new(BigInt::from(1), BigInt::from(2)));
+        assert_eq!(s.coeff(0), r(0));
     }
 
     #[test]

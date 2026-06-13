@@ -3,9 +3,22 @@ name = "jeff-collapse-arith"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-collapse-arith (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Layer 1 arithmetic folder. Stage 0: Faulhaber power-sum collapse with a real, verifier-checked PolynomialIdentity certificate (CLAUDE.md 10.2, PART 11, F.1). Holonomic (Gosper/Zeilberger) is Stage 1."
 
 [dependencies]
+jeff-cert = { workspace = true }
+jeff-verify = { workspace = true }
+jeff-recognizer = { workspace = true }
+jeff-core-ir = { workspace = true }
+jeff-math = { workspace = true }
+jeff-span = { workspace = true }
+num-bigint = { workspace = true }
+num-rational = { workspace = true }
+num-integer = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+jeff-syntax = { workspace = true }
 
 [lints]
 workspace = true
