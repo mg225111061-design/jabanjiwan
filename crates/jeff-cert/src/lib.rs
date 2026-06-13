@@ -287,6 +287,21 @@ pub trait Checker {
 
 /// A certificate that has actually passed a checker. The inner field is private:
 /// the only constructor is [`verify_with`]. This is the type-level P0/P2 gate.
+///
+/// # Tripwire: `unverified_collapse_is_unconstructible`
+///
+/// A `VerifiedCertificate` cannot be forged from outside this crate — the tuple
+/// field is private, so the only way to obtain one is [`verify_with`] (which
+/// returns `Some` only on `Valid`). Therefore a [`Collapsed`] (which *requires* a
+/// `VerifiedCertificate`) cannot be built around an unverified certificate. The
+/// following does not compile (private constructor):
+///
+/// ```compile_fail
+/// use jeff_cert::{Certificate, VerifiedCertificate};
+/// fn forge(c: Certificate) -> VerifiedCertificate {
+///     VerifiedCertificate(c) // ERROR: cannot construct — field is private
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifiedCertificate(Certificate);
 

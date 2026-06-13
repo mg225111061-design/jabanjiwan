@@ -3,9 +3,10 @@ name = "jeff-syntax"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-syntax (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Lexer (Python-style layout), parser, and surface AST for JEFF (CLAUDE.md APPENDIX A grammar, B.1). Spans on every node (R37); diagnostics collected, never panics (R20/R38)."
 
 [dependencies]
+jeff-span = { workspace = true }
 
 [lints]
 workspace = true

@@ -93,6 +93,9 @@ version = "0.1.0"
 [[package]]
 name = "jeff-syntax"
 version = "0.1.0"
+dependencies = [
+ "jeff-span",
+]
 
 [[package]]
 name = "jeff-test-oracles"

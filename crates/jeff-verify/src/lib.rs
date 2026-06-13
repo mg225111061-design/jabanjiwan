@@ -415,6 +415,61 @@ mod tests {
         assert!(verify(cert(ev_bad)).is_none());
     }
 
+    // ===== Verifier-integrity tripwires (MIDBUILD_AUDIT §A.1) =====
+
+    /// Tripwire `false_certificate_is_rejected`: a deliberately wrong certificate
+    /// must NOT verify (→ None → the collapser falls back to the original). Proves
+    /// the checker is real, not a stub that says Valid (DR1/DR7, P0/P1).
+    #[test]
+    fn false_certificate_is_rejected() {
+        // A claimed polynomial identity that is actually nonzero: "n - 1 == 0".
+        let bogus = Poly::var("n").sub(&Poly::from_i64(1));
+        assert!(verify(cert(Evidence::PolynomialIdentity { poly: bogus })).is_none());
+
+        // A lie about a linear-recurrence term (F(10) is 55, claim 999).
+        let lie = Evidence::NumericResidual {
+            replay: ReplayKind::LinearRecTerm {
+                rec: vec![1, 1],
+                init: vec![0, 1],
+                modulus: 1_000_000_007,
+                index: 10,
+                claimed: 999,
+            },
+        };
+        assert!(verify(cert(lie)).is_none());
+
+        // A Cayley–Hamilton claim about a matrix... that is fine for any matrix, so
+        // instead tamper a Pfaffian: det(skew) must equal pf^2.
+        let bad_pf = Evidence::PfaffianHolant {
+            witness: jeff_cert::HolantWitness {
+                skew: vec![0, 1, -1, 0], // 2x2 skew, det = 1, pf = 1
+                dim: 2,
+                claimed_pfaffian: 5, // lie: 5^2 = 25 != 1
+            },
+        };
+        assert!(verify(cert(bad_pf)).is_none());
+    }
+
+    /// Tripwire `sorry_yields_fallback`: when the checker cannot discharge the
+    /// obligation (the analogue of a Lean `sorry` / Z3 `unknown` / timeout), it
+    /// returns `Unknown`, and `verify` yields `None` → fallback (R31/DR8). Here the
+    /// exact replay would exceed its safety cap, so it declines rather than hangs
+    /// (R23) — and crucially does NOT pretend the result is valid.
+    #[test]
+    fn sorry_yields_fallback() {
+        let beyond_cap = Evidence::NumericResidual {
+            replay: ReplayKind::MatrixPowerMod {
+                matrix: vec![1, 1, 1, 0],
+                dim: 2,
+                q: 1_000_000_007,
+                exp: super::REPLAY_CAP + 1, // would hang to replay exactly → Unknown
+                claimed: vec![0, 0, 0, 0],
+            },
+        };
+        assert_eq!(super::check_result(&cert(beyond_cap.clone())), VerifyResult::Unknown);
+        assert!(verify(cert(beyond_cap)).is_none()); // Unknown is NOT Valid (R31)
+    }
+
     #[test]
     fn checker_names_are_honest() {
         assert_eq!(
