@@ -3,13 +3,28 @@ name = "jeffc"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "jeffc driver / CLI (CLAUDE.md PART 5.3). Stub at T0.1."
+description = "jeffc driver / CLI (CLAUDE.md PART 5.3, PART 19). Pipeline: parse -> lower -> recognize -> collapse|defer -> verify -> JLIR -> codegen, with fallback at every boundary (R1)."
 
 [[bin]]
 name = "jeffc"
 path = "src/main.rs"
 
 [dependencies]
+jeff-span = { workspace = true }
+jeff-syntax = { workspace = true }
+jeff-core-ir = { workspace = true }
+jeff-recognizer = { workspace = true }
+jeff-collapse-arith = { workspace = true }
+jeff-cert = { workspace = true }
+jeff-verify = { workspace = true }
+jeff-jlir = { workspace = true }
+jeff-codegen = { workspace = true }
+num-bigint = { workspace = true }
+serde_json = { workspace = true }
+
+[lib]
+name = "jeffc"
+path = "src/lib.rs"
 
 [lints]
 workspace = true

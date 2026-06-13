@@ -3,9 +3,13 @@ name = "jeff-jlir"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-jlir (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "JLIR: the common region where a collapsed residual and a deferred loop both land (CLAUDE.md 6.5, PART 8, D16). Carries Origin + metadata; executed by the core-ir evaluator (fallback harness, P0/R1)."
 
 [dependencies]
+jeff-cert = { workspace = true }
+jeff-core-ir = { workspace = true }
+jeff-span = { workspace = true }
+num-bigint = { workspace = true }
 
 [lints]
 workspace = true

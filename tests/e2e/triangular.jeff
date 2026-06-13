@@ -1,0 +1,13 @@
+module examples.triangular
+
+# Stage 0 end-to-end witness (CLAUDE.md PART 19 / J.1).
+# Recognized as a power sum -> Faulhaber closed form n*(n+1)/2,
+# proved by an exact PolynomialIdentity certificate, then code-generated.
+total fn triangular(n: nat) -> nat:
+    sum i in 0..=n: i
+
+total fn sum_squares(n: nat) -> nat:
+    sum i in 0..=n: i*i
+
+total fn sum_cubes(n: nat) -> nat:
+    sum i in 0..=n: i**3

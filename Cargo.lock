@@ -39,6 +39,14 @@ dependencies = [
 [[package]]
 name = "jeff-codegen"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-core-ir",
+ "jeff-jlir",
+ "jeff-span",
+ "num-bigint",
+ "num-traits",
+]
 
 [[package]]
 name = "jeff-collapse-arith"
@@ -82,6 +90,12 @@ dependencies = [
 [[package]]
 name = "jeff-jlir"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-core-ir",
+ "jeff-span",
+ "num-bigint",
+]
 
 [[package]]
 name = "jeff-math"
@@ -145,6 +159,19 @@ dependencies = [
 [[package]]
 name = "jeffc"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-codegen",
+ "jeff-collapse-arith",
+ "jeff-core-ir",
+ "jeff-jlir",
+ "jeff-recognizer",
+ "jeff-span",
+ "jeff-syntax",
+ "jeff-verify",
+ "num-bigint",
+ "serde_json",
+]
 
 [[package]]
 name = "memchr"

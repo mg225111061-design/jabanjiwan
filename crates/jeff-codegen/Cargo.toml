@@ -3,9 +3,17 @@ name = "jeff-codegen"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-codegen (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "JLIR -> LLVM IR text + compile/run via the system clang (CLAUDE.md PART 8 codegen row). Emits both collapsed residual and deferred loop; the evaluator (jeff-jlir) is the exact reference for P0 equivalence."
 
 [dependencies]
+jeff-jlir = { workspace = true }
+jeff-core-ir = { workspace = true }
+jeff-span = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+jeff-cert = { workspace = true }
 
 [lints]
 workspace = true
