@@ -259,10 +259,19 @@ pub fn emit_certificates(art: &Artifact, dir: &std::path::Path) -> std::io::Resu
         if let Origin::Collapsed { cert, .. } = &cf.region.origin {
             let file = format!("{}.cert.json", cf.name);
             let checker = jeff_verify::checker_name(&cert.certificate().evidence);
+            // human-readable record (APPENDIX H.3)
             let json = cert.certificate().to_json(checker);
-            let pretty = serde_json::to_string_pretty(&json)?;
-            std::fs::write(dir.join(&file), pretty)?;
-            manifest_funcs.push(serde_json::json!({ "name": cf.name, "cert_file": file }));
+            std::fs::write(dir.join(&file), serde_json::to_string_pretty(&json)?)?;
+            // machine-replayable certificate (round-trippable serde) for cert-replay
+            // (R25): the replay tool deserializes this and re-runs verify().
+            let machine = format!("{}.machine.json", cf.name);
+            std::fs::write(
+                dir.join(&machine),
+                serde_json::to_string_pretty(cert.certificate())?,
+            )?;
+            manifest_funcs.push(
+                serde_json::json!({ "name": cf.name, "cert_file": file, "machine_file": machine }),
+            );
         }
     }
     let manifest = serde_json::json!({

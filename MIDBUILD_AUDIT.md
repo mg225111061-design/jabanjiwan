@@ -155,3 +155,27 @@ only honest incompleteness of the Stage-0 thin slice. Per **§D.3** (clean ⇒ c
 current milestone only), the next step is to **finish the Stage-0 thin slice so it
 executes** and returns the correct value, both collapse and fallback paths tested
 (T0.4/T0.6/T0.7) — and then **STOP at the Stage 0 boundary and await `go`** before Stage 1.
+
+---
+
+## RESOLUTION (post-audit, same session) — Stage 0 thin slice now EXECUTES
+
+The current milestone is complete. The slice `sum i in 0..=n: i` runs end to end:
+
+```
+$ jeffc build tests/e2e/triangular.jeff --collapse-report
+fn triangular   collapsed  layer=1(arith/faulhaber)  O(1)  cert=ok(exact-coeff-zero)
+$ jeffc run tests/e2e/triangular.jeff triangular 100000
+5000050000
+```
+
+- Pipeline built: core-ir (lower + exact evaluator) → recognizer → Faulhaber collapse
+  (closed form by interpolation, **verifier-checked** PolynomialIdentity) → JLIR →
+  LLVM codegen (clang) / evaluator. Fallback at every boundary (R1).
+- Collapse path == fallback path == naive sum (P0); forced-fallback still correct (R1).
+- On-disk cert-replay (R25) re-verifies emitted certs and **rejects a tampered one**.
+- `ci/run.sh`: build, clippy -D warnings, test, license-scan, determinism, cert-replay,
+  bench-honesty — **ALL STAGE-0 GATES GREEN**.
+
+Per **§A.3** (no Stage-1+ without an explicit human `go`), the build now **STOPS at the
+Stage 0 boundary**. NEXT = Stage 1 (Holonomic: Gosper/Zeilberger) — awaiting `go`.
