@@ -3,9 +3,15 @@ name = "jeff-verify"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-verify (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Certificate checkers (CLAUDE.md PART 6.2, APPENDIX F): exact polynomial identity, GF(2) basis, Cayley-Hamilton, numeric replay. Sole producer of VerifiedCertificate via jeff-cert::verify_with."
 
 [dependencies]
+jeff-cert = { workspace = true }
+jeff-math = { workspace = true }
+jeff-span = { workspace = true }
+num-bigint = { workspace = true }
+num-rational = { workspace = true }
+num-traits = { workspace = true }
 
 [lints]
 workspace = true

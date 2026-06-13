@@ -3,9 +3,13 @@ name = "jeff-cert"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-cert (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Certificate schema + the type-level proof-carrying gate (CLAUDE.md PART 6.1, PART 11): Collapsed cannot exist without a VerifiedCertificate."
 
 [dependencies]
+jeff-span = { workspace = true }
+jeff-math = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

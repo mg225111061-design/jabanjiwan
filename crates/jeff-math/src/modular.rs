@@ -35,25 +35,6 @@ impl ModInt {
         self.modulus
     }
 
-    pub fn add(self, o: ModInt) -> ModInt {
-        let m = self.same(o);
-        // avoid overflow with u128
-        let v = ((self.val as u128 + o.val as u128) % m as u128) as u64;
-        ModInt { val: v, modulus: m }
-    }
-
-    pub fn sub(self, o: ModInt) -> ModInt {
-        let m = self.same(o);
-        let v = ((self.val as u128 + m as u128 - o.val as u128) % m as u128) as u64;
-        ModInt { val: v, modulus: m }
-    }
-
-    pub fn mul(self, o: ModInt) -> ModInt {
-        let m = self.same(o);
-        let v = ((self.val as u128 * o.val as u128) % m as u128) as u64;
-        ModInt { val: v, modulus: m }
-    }
-
     /// Modular exponentiation, `self ** e mod q`, in O(log e) (square-and-multiply).
     pub fn pow(self, mut e: u64) -> ModInt {
         let m = self.modulus;
@@ -61,9 +42,9 @@ impl ModInt {
         let mut acc = ModInt::one(m);
         while e > 0 {
             if e & 1 == 1 {
-                acc = acc.mul(base);
+                acc = acc * base;
             }
-            base = base.mul(base);
+            base = base * base;
             e >>= 1;
         }
         acc
@@ -76,6 +57,33 @@ impl ModInt {
             return None;
         }
         Some(self.pow(self.modulus - 2))
+    }
+}
+
+impl std::ops::Add for ModInt {
+    type Output = ModInt;
+    fn add(self, o: ModInt) -> ModInt {
+        let m = self.same(o);
+        let v = ((self.val as u128 + o.val as u128) % m as u128) as u64;
+        ModInt { val: v, modulus: m }
+    }
+}
+
+impl std::ops::Sub for ModInt {
+    type Output = ModInt;
+    fn sub(self, o: ModInt) -> ModInt {
+        let m = self.same(o);
+        let v = ((self.val as u128 + m as u128 - o.val as u128) % m as u128) as u64;
+        ModInt { val: v, modulus: m }
+    }
+}
+
+impl std::ops::Mul for ModInt {
+    type Output = ModInt;
+    fn mul(self, o: ModInt) -> ModInt {
+        let m = self.same(o);
+        let v = ((self.val as u128 * o.val as u128) % m as u128) as u64;
+        ModInt { val: v, modulus: m }
     }
 }
 
@@ -98,7 +106,7 @@ impl NttCtx {
         if n == 0 || (n & (n - 1)) != 0 {
             return None; // n not a power of two
         }
-        if (q - 1) % (n as u64) != 0 {
+        if !(q - 1).is_multiple_of(n as u64) {
             return None; // n does not divide q-1
         }
         let g = ModInt::new(primitive_root_g, q);
@@ -138,10 +146,10 @@ impl NttCtx {
                 let mut w = ModInt::one(q);
                 for k in 0..len / 2 {
                     let u = a[i + k];
-                    let v = a[i + k + len / 2].mul(w);
-                    a[i + k] = u.add(v);
-                    a[i + k + len / 2] = u.sub(v);
-                    w = w.mul(wlen);
+                    let v = a[i + k + len / 2] * w;
+                    a[i + k] = u + v;
+                    a[i + k + len / 2] = u - v;
+                    w = w * wlen;
                 }
                 i += len;
             }
@@ -150,7 +158,7 @@ impl NttCtx {
         if inverse {
             let n_inv = ModInt::new(self.n as u64, q).inv().unwrap();
             for x in a.iter_mut() {
-                *x = x.mul(n_inv);
+                *x = *x * n_inv;
             }
         }
     }
@@ -161,7 +169,7 @@ impl NttCtx {
         let mut fb: Vec<ModInt> = b.iter().map(|&x| ModInt::new(x, self.q)).collect();
         self.transform(&mut fa, false);
         self.transform(&mut fb, false);
-        let mut fc: Vec<ModInt> = fa.iter().zip(&fb).map(|(x, y)| x.mul(*y)).collect();
+        let mut fc: Vec<ModInt> = fa.iter().zip(&fb).map(|(x, y)| *x * *y).collect();
         self.transform(&mut fc, true);
         fc.iter().map(|x| x.val).collect()
     }
@@ -176,7 +184,7 @@ mod tests {
         let a = ModInt::new(3, 3329);
         assert_eq!(a.pow(0).val, 1);
         let inv = a.inv().unwrap();
-        assert_eq!(a.mul(inv).val, 1);
+        assert_eq!((a * inv).val, 1);
     }
 
     #[test]

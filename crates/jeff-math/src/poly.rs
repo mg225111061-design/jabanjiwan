@@ -15,7 +15,18 @@
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Zero};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::str::FromStr;
+
+/// Parse a `BigRational` from its canonical string ("a" or "a/b"). Used by the
+/// serde round-trip so emitted certificates are replayable from disk (R25).
+fn parse_rational(s: &str) -> BigRational {
+    BigRational::from_str(s).unwrap_or_else(|_| {
+        // num-rational only parses "a/b"; integers like "5" parse via BigInt.
+        BigRational::from(BigInt::from_str(s).expect("invalid rational in certificate"))
+    })
+}
 
 /// A monomial: a sorted list of `(variable, exponent)` with `exponent > 0`.
 /// The empty vector is the constant monomial `1`. Canonical ordering (by the
@@ -41,9 +52,40 @@ fn norm_monomial(mut m: Monomial) -> Monomial {
 
 /// Multivariate polynomial over `BigRational`, stored as a canonical map from
 /// monomial to nonzero coefficient.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "PolySer", from = "PolySer")]
 pub struct Poly {
     terms: BTreeMap<Monomial, BigRational>,
+}
+
+/// Serde shadow for [`Poly`]: a sequence of `(monomial, coeff-as-string)` so the
+/// JSON is deterministic (R11) and replayable (R25) without needing string map
+/// keys. Rationals are rendered as canonical strings.
+#[derive(Serialize, Deserialize)]
+struct PolySer {
+    terms: Vec<(Monomial, String)>,
+}
+
+impl From<Poly> for PolySer {
+    fn from(p: Poly) -> Self {
+        PolySer {
+            terms: p
+                .terms
+                .into_iter()
+                .map(|(m, c)| (m, c.to_string()))
+                .collect(),
+        }
+    }
+}
+
+impl From<PolySer> for Poly {
+    fn from(s: PolySer) -> Self {
+        let mut p = Poly::zero();
+        for (m, c) in s.terms {
+            p.add_term(m, parse_rational(&c));
+        }
+        p
+    }
 }
 
 impl Poly {
@@ -223,9 +265,29 @@ impl Poly {
 /// Univariate polynomial over `BigRational`, coefficients indexed by degree
 /// (`coeffs[i]` is the coefficient of `x^i`). Trailing zeros are trimmed so that
 /// the leading coefficient is nonzero (except the zero polynomial = empty).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "UniPolySer", from = "UniPolySer")]
 pub struct UniPoly {
     pub coeffs: Vec<BigRational>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct UniPolySer {
+    coeffs: Vec<String>,
+}
+
+impl From<UniPoly> for UniPolySer {
+    fn from(p: UniPoly) -> Self {
+        UniPolySer {
+            coeffs: p.coeffs.iter().map(|c| c.to_string()).collect(),
+        }
+    }
+}
+
+impl From<UniPolySer> for UniPoly {
+    fn from(s: UniPolySer) -> Self {
+        UniPoly::from_coeffs(s.coeffs.iter().map(|c| parse_rational(c)).collect())
+    }
 }
 
 impl UniPoly {

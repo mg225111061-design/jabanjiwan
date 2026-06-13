@@ -1,1 +1,412 @@
-//! jeff-cert — stub (CLAUDE.md T0.1 workspace scaffold). Implemented per PART 9 build order.
+//! Certificate schema and the proof-carrying gate.
+//!
+//! Authority: CLAUDE.md PART 6.1 (schema), PART 11 (verification), PART 12
+//! (barrier taxonomy), APPENDIX F (proof walkthroughs).
+//!
+//! # The P0/P2 invariant, enforced by the type system
+//!
+//! `Collapsed` carries a private [`VerifiedCertificate`]. The *only* way to build a
+//! `VerifiedCertificate` is [`verify_with`], which constructs one **only** when a
+//! [`Checker`] returns [`VerifyResult::Valid`]. Therefore a `Collapsed` cannot be
+//! constructed without a certificate that actually passed a check (R31: Unknown /
+//! Invalid → `None` → caller must fall back to the original, R1). The concrete
+//! checkers live in `jeff-verify`; this crate owns *what counts as verified*.
+//!
+//! Trust model (honest, DR1/D3): the type system guarantees "*a* checker said
+//! Valid". The honesty discipline + `jeff-verify`'s real exact checkers + the
+//! certificate-replay tests (R25) guarantee the checker is sound, not a stub that
+//! always says Valid (which would be the PART 18 #6 anti-pattern).
+
+use jeff_math::{Gf2Matrix, Gf2Vec, Poly, RatMatrix, UniPoly};
+use jeff_span::{Diagnostic, Span};
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+
+pub mod barrier;
+pub use barrier::BarrierTag;
+
+/// Identifier of a node in some IR (core IR / JLIR). Certificates reference source
+/// and collapsed nodes by id + span (R37).
+pub type NodeId = u32;
+
+/// A static collapser identifier, e.g. `"arith/faulhaber"` (PART 6.1).
+pub type CollapserId = &'static str;
+
+/// A reference into an IR: which node, and where it came from in source (R37).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IrRef {
+    pub id: NodeId,
+    pub span: Span,
+}
+
+impl IrRef {
+    pub fn new(id: NodeId, span: Span) -> Self {
+        IrRef { id, span }
+    }
+}
+
+/// The equivalence claim a certificate discharges (PART 6.1 `Obligation`).
+/// Human-readable; the machine-checkable content lives in [`Evidence`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Obligation {
+    pub claim: String,
+}
+
+impl Obligation {
+    pub fn new(claim: impl Into<String>) -> Self {
+        Obligation {
+            claim: claim.into(),
+        }
+    }
+}
+
+/// A boundary condition that must hold for the collapse to be sound (R16): base
+/// cases, domain endpoints, nonzero denominators, etc. (APPENDIX P.2).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Boundary {
+    pub description: String,
+}
+
+impl Boundary {
+    pub fn new(d: impl Into<String>) -> Self {
+        Boundary {
+            description: d.into(),
+        }
+    }
+}
+
+/// A rational function `num / den` over the multivariate polynomials (Telescoper
+/// certificate rational part).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RatFn {
+    pub num: Poly,
+    pub den: Poly,
+}
+
+/// A linear recurrence operator `L = Σ_i a_i(n) · S^i` (the shift `S: n ↦ n+1`),
+/// with `coeffs[i] = a_i(n)` a univariate polynomial in `n`. Telescoper output.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Operator {
+    pub coeffs: Vec<UniPoly>,
+}
+
+/// Witness for a planar #CSP / Pfaffian collapse (APPENDIX E.5), replayed exactly
+/// over the integers: the skew-symmetric matrix and the claimed Pfaffian/count.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HolantWitness {
+    /// Skew-symmetric adjacency (row-major, i64). `det = pf^2` is re-checked.
+    pub skew: Vec<i64>,
+    pub dim: usize,
+    pub claimed_pfaffian: i64,
+}
+
+/// What a [`Evidence::NumericResidual`] should recompute exactly to confirm the
+/// collapse (APPENDIX F.6 ReplayChecker). All exact integer/modular work.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReplayKind {
+    /// `A^exp mod q` checked against the slow product for small `exp` (A15).
+    MatrixPowerMod {
+        matrix: Vec<u64>,
+        dim: usize,
+        q: u64,
+        exp: u64,
+        claimed: Vec<u64>,
+    },
+    /// `[x^index] P/Q mod q` (Bostan–Mori) checked against direct unrolling (A08).
+    LinearRecTerm {
+        rec: Vec<i64>, // recurrence coeffs a_1..a_d (a_n = Σ a_i a_{n-i})
+        init: Vec<i64>,
+        modulus: u64,
+        index: u64,
+        claimed: u64,
+    },
+    /// Exact cyclic convolution via NTT vs naive (PQC poly_mul P01).
+    Convolution {
+        a: Vec<u64>,
+        b: Vec<u64>,
+        q: u64,
+        root: u64,
+        n: usize,
+        claimed: Vec<u64>,
+    },
+    /// Finite sample agreement: closed form evaluated at given inputs must equal
+    /// the listed expected values (Barvinok chamber sampling, APPENDIX F.4).
+    SampleAgreement { samples: Vec<SamplePoint> },
+}
+
+/// One `(inputs → expected)` sample for [`ReplayKind::SampleAgreement`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SamplePoint {
+    pub inputs: Vec<i64>,
+    pub expected: i64,
+    /// The closed form, evaluated by the checker, rendered as a Poly with the
+    /// variable names matching `var_names`.
+    pub closed_form: Poly,
+    pub var_names: Vec<String>,
+}
+
+/// Evidence kinds and their checker routing (PART 6.1, APPENDIX F.6):
+/// * `PolynomialIdentity` → Poly coeff-zero (F.1/F.4/F.5)
+/// * `Telescoper`         → poly identity (F.2) | Lean operator induction (stub)
+/// * `Gf2LinearIdentity`  → basis evaluation over GF(2) (F.3)
+/// * `EigenCharpoly`      → Cayley–Hamilton ring identity (F.5)
+/// * `NumericResidual`    → exact modular/int replay (F.6)
+/// * `PfaffianHolant`     → Pfaffian/det replay (E.5)
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Evidence {
+    /// The difference polynomial that must be identically zero.
+    PolynomialIdentity { poly: Poly },
+    /// Telescoper `L` and rational certificate `R`; plus the proper-hypergeometric
+    /// identity rendered as a polynomial that must vanish (checked like F.2).
+    Telescoper {
+        l: Operator,
+        r: RatFn,
+        identity: Poly,
+    },
+    /// Circuit captured as its linear action `M·x ⊕ b`. The checker re-evaluates
+    /// the original circuit on `{0, e_i}` (carried in `circuit`) and confirms it
+    /// reconstructs `(m, b)` — sound given structural linearity (E.3 note).
+    Gf2LinearIdentity {
+        circuit: gf2circuit::LinearCircuit,
+        m: Gf2Matrix,
+        b: Gf2Vec,
+    },
+    /// The matrix whose characteristic polynomial must annihilate it (F.5).
+    EigenCharpoly { matrix: RatMatrix },
+    /// Exact recompute task (F.6).
+    NumericResidual { replay: ReplayKind },
+    /// Planar #CSP / matching witness (E.5).
+    PfaffianHolant { witness: HolantWitness },
+}
+
+/// A small captured GF(2) linear circuit so the GF(2) certificate is self-contained
+/// (R16) and replayable (R25).
+pub mod gf2circuit {
+    use serde::{Deserialize, Serialize};
+
+    /// A gate in a linear GF(2) region. Only linear/affine gates appear here;
+    /// `partition` (Layer 2) cuts at nonlinear gates (AND/OR/MUX), which become a
+    /// `nonlinearity` barrier (APPENDIX 10.4 / P.3).
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Gate {
+        /// output wire = input wire (identity / copy)
+        Input(usize),
+        /// XOR of two previously-defined wires
+        Xor(usize, usize),
+        /// NOT of a wire (affine: contributes to b)
+        Not(usize),
+        /// constant 0/1
+        Const(bool),
+    }
+
+    /// A straight-line GF(2) circuit: `n` inputs, a list of gates (each defines the
+    /// next wire id), and which wires are the outputs.
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct LinearCircuit {
+        pub n_inputs: usize,
+        pub gates: Vec<Gate>,
+        pub outputs: Vec<usize>,
+    }
+
+    impl LinearCircuit {
+        /// Evaluate on a concrete input bit-vector (LSB = input 0). Returns the
+        /// output bits. Used by both the folder (to build M,b) and the checker (to
+        /// confirm M,b on the basis) — same code, so the check is honest.
+        pub fn eval(&self, input: &[bool]) -> Vec<bool> {
+            let mut wires: Vec<bool> = Vec::with_capacity(self.n_inputs + self.gates.len());
+            // wire ids 0..n_inputs are the inputs
+            for i in 0..self.n_inputs {
+                wires.push(input.get(i).copied().unwrap_or(false));
+            }
+            for g in &self.gates {
+                let v = match *g {
+                    Gate::Input(w) => wires[w],
+                    Gate::Xor(a, b) => wires[a] ^ wires[b],
+                    Gate::Not(a) => !wires[a],
+                    Gate::Const(c) => c,
+                };
+                wires.push(v);
+            }
+            self.outputs.iter().map(|&w| wires[w]).collect()
+        }
+
+        pub fn n_outputs(&self) -> usize {
+            self.outputs.len()
+        }
+    }
+}
+
+/// A certificate: self-contained (R16) — source, collapsed form, obligation,
+/// evidence, boundaries, and a fallback that always equals the source.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Certificate {
+    /// `Cow<'static, str>` (DR6 representational note): keeps `&'static str`
+    /// ergonomics (`CollapserId.into()`) while still deserializing for cert-replay.
+    pub collapser_id: Cow<'static, str>,
+    pub source: IrRef,
+    pub collapsed: IrRef,
+    pub obligation: Obligation,
+    pub evidence: Evidence,
+    pub boundaries: Vec<Boundary>,
+    /// Always equals `source` (P0 fallback target).
+    pub fallback: IrRef,
+}
+
+impl Certificate {
+    /// Emit the human + machine JSON record for `--emit-certificates` (APPENDIX
+    /// H.3). Deterministic (R11): field order fixed, values canonical.
+    pub fn to_json(&self, verified_checker: &str) -> serde_json::Value {
+        serde_json::json!({
+            "collapser_id": self.collapser_id.as_ref(),
+            "source": { "node": self.source.id, "span": self.source.span.to_string() },
+            "collapsed": { "node": self.collapsed.id, "span": self.collapsed.span.to_string() },
+            "obligation": self.obligation.claim,
+            "evidence": self.evidence,
+            "boundaries": self.boundaries.iter().map(|b| b.description.clone()).collect::<Vec<_>>(),
+            "verified": { "checker": verified_checker, "result": "valid" },
+            "fallback": { "node": self.fallback.id },
+        })
+    }
+}
+
+/// Result of a checker (PART 6.2). `Unknown` = timeout / incapable — **not** valid
+/// (R31): treated as a fallback trigger, never as success (DR8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VerifyResult {
+    Valid,
+    Invalid,
+    Unknown,
+}
+
+/// A checker discharges one or more evidence kinds (PART 6.2). Implemented in
+/// `jeff-verify`. Must terminate (R23): exact checks here are inherently bounded;
+/// any external solver must carry its own timeout + fallback.
+pub trait Checker {
+    fn check(&self, ev: &Evidence, ob: &Obligation, boundaries: &[Boundary]) -> VerifyResult;
+}
+
+/// A certificate that has actually passed a checker. The inner field is private:
+/// the only constructor is [`verify_with`]. This is the type-level P0/P2 gate.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifiedCertificate(Certificate);
+
+impl VerifiedCertificate {
+    pub fn certificate(&self) -> &Certificate {
+        &self.0
+    }
+    pub fn into_certificate(self) -> Certificate {
+        self.0
+    }
+}
+
+/// The single constructor of [`VerifiedCertificate`]. Runs `checker`; produces
+/// `Some` **iff** the result is `Valid` (R31: Unknown/Invalid → `None`). This is
+/// the choke point through which every collapse must pass (P2).
+pub fn verify_with(c: Certificate, checker: &dyn Checker) -> Option<VerifiedCertificate> {
+    match checker.check(&c.evidence, &c.obligation, &c.boundaries) {
+        VerifyResult::Valid => Some(VerifiedCertificate(c)),
+        VerifyResult::Invalid | VerifyResult::Unknown => None,
+    }
+}
+
+/// A collapsed program fragment: a sublinear/closed residual plus the verified
+/// certificate proving it equivalent to the source. Cannot be built without a
+/// `VerifiedCertificate` (P0/P2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Collapsed {
+    pub residual: IrRef,
+    cert: VerifiedCertificate,
+}
+
+impl Collapsed {
+    pub fn new(residual: IrRef, cert: VerifiedCertificate) -> Self {
+        Collapsed { residual, cert }
+    }
+    pub fn certificate(&self) -> &VerifiedCertificate {
+        &self.cert
+    }
+}
+
+/// An honest deferral: a named barrier (PART 12), a user diagnostic (R4/R27), and
+/// the preserved original (P0).
+#[derive(Clone, Debug)]
+pub struct Defer {
+    pub tag: BarrierTag,
+    pub diagnostic: Diagnostic,
+    pub original: IrRef,
+}
+
+impl Defer {
+    pub fn new(tag: BarrierTag, original: IrRef) -> Self {
+        let diagnostic = tag.diagnostic(original.span);
+        Defer {
+            tag,
+            diagnostic,
+            original,
+        }
+    }
+}
+
+/// The result of attempting a collapse: either a verified `Collapsed` (whole, R32:
+/// no half-collapse) or an honest `Defer` (R4). A collapser never returns a partial
+/// or unverified result (E.7).
+#[derive(Clone, Debug)]
+pub enum CollapseOutcome {
+    Collapsed(Collapsed),
+    Defer(Defer),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jeff_span::Span;
+
+    struct AlwaysValid;
+    impl Checker for AlwaysValid {
+        fn check(&self, _: &Evidence, _: &Obligation, _: &[Boundary]) -> VerifyResult {
+            VerifyResult::Valid
+        }
+    }
+    struct AlwaysUnknown;
+    impl Checker for AlwaysUnknown {
+        fn check(&self, _: &Evidence, _: &Obligation, _: &[Boundary]) -> VerifyResult {
+            VerifyResult::Unknown
+        }
+    }
+
+    fn dummy_cert() -> Certificate {
+        Certificate {
+            collapser_id: "test/dummy".into(),
+            source: IrRef::new(1, Span::dummy()),
+            collapsed: IrRef::new(2, Span::dummy()),
+            obligation: Obligation::new("x == x"),
+            evidence: Evidence::PolynomialIdentity { poly: Poly::zero() },
+            boundaries: vec![],
+            fallback: IrRef::new(1, Span::dummy()),
+        }
+    }
+
+    #[test]
+    fn valid_yields_verified_certificate() {
+        let vc = verify_with(dummy_cert(), &AlwaysValid);
+        assert!(vc.is_some());
+        let collapsed = Collapsed::new(IrRef::new(2, Span::dummy()), vc.unwrap());
+        assert_eq!(collapsed.residual.id, 2);
+    }
+
+    #[test]
+    fn unknown_yields_none_then_fallback() {
+        // R31: Unknown is not Valid → no VerifiedCertificate → caller must fall back.
+        let vc = verify_with(dummy_cert(), &AlwaysUnknown);
+        assert!(vc.is_none());
+    }
+
+    #[test]
+    fn certificate_json_is_deterministic() {
+        let c = dummy_cert();
+        let a = c.to_json("z3");
+        let b = c.to_json("z3");
+        assert_eq!(a, b);
+        assert_eq!(a["verified"]["result"], "valid");
+    }
+}

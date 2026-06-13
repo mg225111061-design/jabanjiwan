@@ -12,13 +12,48 @@ use crate::poly::UniPoly;
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{One, Zero};
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+
+fn parse_rational(s: &str) -> BigRational {
+    BigRational::from_str(s)
+        .unwrap_or_else(|_| BigRational::from(BigInt::from_str(s).expect("bad rational")))
+}
 
 /// Square (or rectangular) matrix over `BigRational`, row-major.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "RatMatrixSer", from = "RatMatrixSer")]
 pub struct RatMatrix {
     pub rows: usize,
     pub cols: usize,
     pub data: Vec<BigRational>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct RatMatrixSer {
+    rows: usize,
+    cols: usize,
+    data: Vec<String>,
+}
+
+impl From<RatMatrix> for RatMatrixSer {
+    fn from(m: RatMatrix) -> Self {
+        RatMatrixSer {
+            rows: m.rows,
+            cols: m.cols,
+            data: m.data.iter().map(|c| c.to_string()).collect(),
+        }
+    }
+}
+
+impl From<RatMatrixSer> for RatMatrix {
+    fn from(s: RatMatrixSer) -> Self {
+        RatMatrix {
+            rows: s.rows,
+            cols: s.cols,
+            data: s.data.iter().map(|c| parse_rational(c)).collect(),
+        }
+    }
 }
 
 impl RatMatrix {
@@ -164,6 +199,48 @@ impl RatMatrix {
         let p = self.charpoly();
         self.eval_poly(&p).is_zero()
     }
+
+    /// Exact determinant via Gaussian elimination over `Q` (O(n^3)). Used by the
+    /// Pfaffian replay check `det(A) = Pf(A)^2` (APPENDIX E.5).
+    pub fn det(&self) -> BigRational {
+        assert_eq!(self.rows, self.cols, "det needs a square matrix");
+        let n = self.rows;
+        let mut a = self.data.clone();
+        let idx = |i: usize, j: usize| i * n + j;
+        let mut det = BigRational::one();
+        for col in 0..n {
+            // find pivot
+            let mut pivot = None;
+            for row in col..n {
+                if !a[idx(row, col)].is_zero() {
+                    pivot = Some(row);
+                    break;
+                }
+            }
+            let Some(p) = pivot else {
+                return BigRational::zero();
+            };
+            if p != col {
+                for k in 0..n {
+                    a.swap(idx(col, k), idx(p, k));
+                }
+                det = -det;
+            }
+            let pivot_val = a[idx(col, col)].clone();
+            det *= &pivot_val;
+            for row in (col + 1)..n {
+                let factor = &a[idx(row, col)] / &pivot_val;
+                if factor.is_zero() {
+                    continue;
+                }
+                for k in col..n {
+                    let sub = &factor * &a[idx(col, k)];
+                    a[idx(row, k)] -= sub;
+                }
+            }
+        }
+        det
+    }
 }
 
 /// Integer matrix mod q, for `matrix_power_mod` (fixture A15) — exact, O(log e).
@@ -262,7 +339,7 @@ pub fn bostan_mori(p_coeffs: &[u64], q_coeffs: &[u64], mut n: u64, q: u64) -> u6
         let mut c = vec![ModInt::zero(q); a.len() + b.len() - 1];
         for (i, &x) in a.iter().enumerate() {
             for (j, &y) in b.iter().enumerate() {
-                c[i + j] = c[i + j].add(x.mul(y));
+                c[i + j] = c[i + j] + x * y;
             }
         }
         c
@@ -270,7 +347,7 @@ pub fn bostan_mori(p_coeffs: &[u64], q_coeffs: &[u64], mut n: u64, q: u64) -> u6
     let neg_odd = |a: &[ModInt]| -> Vec<ModInt> {
         a.iter()
             .enumerate()
-            .map(|(i, &x)| if i % 2 == 1 { ModInt::zero(q).sub(x) } else { x })
+            .map(|(i, &x)| if i % 2 == 1 { ModInt::zero(q) - x } else { x })
             .collect()
     };
     let even_part = |a: &[ModInt]| -> Vec<ModInt> { a.iter().step_by(2).cloned().collect() };
@@ -280,14 +357,18 @@ pub fn bostan_mori(p_coeffs: &[u64], q_coeffs: &[u64], mut n: u64, q: u64) -> u6
         let qm = neg_odd(&qq);
         let u = poly_mul(&p, &qm); // numerator
         let v = poly_mul(&qq, &qm); // = V(x^2)
-        p = if n % 2 == 0 { even_part(&u) } else { odd_part(&u) };
+        p = if n.is_multiple_of(2) {
+            even_part(&u)
+        } else {
+            odd_part(&u)
+        };
         qq = even_part(&v);
         n /= 2;
     }
     // result = P(0)/Q(0)
     let p0 = p.first().copied().unwrap_or(ModInt::zero(q));
     let q0 = qq.first().copied().unwrap_or(ModInt::one(q));
-    p0.mul(q0.inv().expect("Q(0) invertible")).val
+    (p0 * q0.inv().expect("Q(0) invertible")).val
 }
 
 #[cfg(test)]
