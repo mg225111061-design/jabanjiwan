@@ -1,0 +1,199 @@
+//! Modular integer arithmetic over a runtime prime modulus.
+//!
+//! Backs `Evidence::NumericResidual` replay (APPENDIX F.6) and the NTT / Bostan–Mori
+//! kernels (APPENDIX E.4). All operations are exact integer arithmetic mod `q`
+//! (R33: exact on the collapse path). `q` is carried per value so a checker can be
+//! fully self-contained (R16).
+
+/// An element of Z/qZ. `q` is stored alongside the value so operations can assert
+/// matching moduli (a mismatch is an internal-invariant bug → panic is acceptable
+/// here per R38, since it is not user input).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModInt {
+    pub val: u64,
+    pub modulus: u64,
+}
+
+impl ModInt {
+    pub fn new(val: u64, modulus: u64) -> Self {
+        assert!(modulus > 1, "modulus must be > 1");
+        ModInt {
+            val: val % modulus,
+            modulus,
+        }
+    }
+
+    pub fn zero(modulus: u64) -> Self {
+        ModInt::new(0, modulus)
+    }
+    pub fn one(modulus: u64) -> Self {
+        ModInt::new(1, modulus)
+    }
+
+    fn same(self, o: ModInt) -> u64 {
+        debug_assert_eq!(self.modulus, o.modulus, "modulus mismatch (R18 invariant)");
+        self.modulus
+    }
+
+    pub fn add(self, o: ModInt) -> ModInt {
+        let m = self.same(o);
+        // avoid overflow with u128
+        let v = ((self.val as u128 + o.val as u128) % m as u128) as u64;
+        ModInt { val: v, modulus: m }
+    }
+
+    pub fn sub(self, o: ModInt) -> ModInt {
+        let m = self.same(o);
+        let v = ((self.val as u128 + m as u128 - o.val as u128) % m as u128) as u64;
+        ModInt { val: v, modulus: m }
+    }
+
+    pub fn mul(self, o: ModInt) -> ModInt {
+        let m = self.same(o);
+        let v = ((self.val as u128 * o.val as u128) % m as u128) as u64;
+        ModInt { val: v, modulus: m }
+    }
+
+    /// Modular exponentiation, `self ** e mod q`, in O(log e) (square-and-multiply).
+    pub fn pow(self, mut e: u64) -> ModInt {
+        let m = self.modulus;
+        let mut base = self;
+        let mut acc = ModInt::one(m);
+        while e > 0 {
+            if e & 1 == 1 {
+                acc = acc.mul(base);
+            }
+            base = base.mul(base);
+            e >>= 1;
+        }
+        acc
+    }
+
+    /// Multiplicative inverse via Fermat's little theorem (assumes `q` prime).
+    /// Returns `None` if `self == 0`.
+    pub fn inv(self) -> Option<ModInt> {
+        if self.val == 0 {
+            return None;
+        }
+        Some(self.pow(self.modulus - 2))
+    }
+}
+
+/// Number-theoretic transform context for an NTT-friendly prime `q` with a
+/// primitive `n`-th root of unity. Used by `numeric.ntt` (APPENDIX I.3) for exact
+/// negacyclic/cyclic convolution; the collapse certificate is `NumericResidual`.
+///
+/// Requires `n` a power of two with `n | (q - 1)` (checked, returns `None`).
+pub struct NttCtx {
+    pub q: u64,
+    pub n: usize,
+    pub root: u64, // primitive n-th root of unity mod q
+}
+
+impl NttCtx {
+    /// Build a context from a known NTT-friendly prime and a primitive root `g`
+    /// of the multiplicative group mod q. Returns `None` if `n ∤ (q-1)` or `n` not
+    /// a power of two (R38: report, do not panic on bad caller config).
+    pub fn new(q: u64, n: usize, primitive_root_g: u64) -> Option<Self> {
+        if n == 0 || (n & (n - 1)) != 0 {
+            return None; // n not a power of two
+        }
+        if (q - 1) % (n as u64) != 0 {
+            return None; // n does not divide q-1
+        }
+        let g = ModInt::new(primitive_root_g, q);
+        let exp = (q - 1) / n as u64;
+        let root = g.pow(exp).val;
+        Some(NttCtx { q, n, root })
+    }
+
+    fn bit_reverse(a: &mut [ModInt]) {
+        let n = a.len();
+        let mut j = 0usize;
+        for i in 1..n {
+            let mut bit = n >> 1;
+            while j & bit != 0 {
+                j ^= bit;
+                bit >>= 1;
+            }
+            j ^= bit;
+            if i < j {
+                a.swap(i, j);
+            }
+        }
+    }
+
+    /// In-place iterative Cooley–Tukey NTT. `inverse=false` forward, `true` inverse.
+    pub fn transform(&self, a: &mut [ModInt], inverse: bool) {
+        assert_eq!(a.len(), self.n, "NTT length must match context");
+        let q = self.q;
+        Self::bit_reverse(a);
+        let mut len = 2usize;
+        while len <= self.n {
+            // w = root^(n/len), or its inverse
+            let base = ModInt::new(self.root, q).pow((self.n / len) as u64);
+            let wlen = if inverse { base.inv().unwrap() } else { base };
+            let mut i = 0;
+            while i < self.n {
+                let mut w = ModInt::one(q);
+                for k in 0..len / 2 {
+                    let u = a[i + k];
+                    let v = a[i + k + len / 2].mul(w);
+                    a[i + k] = u.add(v);
+                    a[i + k + len / 2] = u.sub(v);
+                    w = w.mul(wlen);
+                }
+                i += len;
+            }
+            len <<= 1;
+        }
+        if inverse {
+            let n_inv = ModInt::new(self.n as u64, q).inv().unwrap();
+            for x in a.iter_mut() {
+                *x = x.mul(n_inv);
+            }
+        }
+    }
+
+    /// Cyclic convolution of two length-n vectors via NTT (exact mod q).
+    pub fn convolve(&self, a: &[u64], b: &[u64]) -> Vec<u64> {
+        let mut fa: Vec<ModInt> = a.iter().map(|&x| ModInt::new(x, self.q)).collect();
+        let mut fb: Vec<ModInt> = b.iter().map(|&x| ModInt::new(x, self.q)).collect();
+        self.transform(&mut fa, false);
+        self.transform(&mut fb, false);
+        let mut fc: Vec<ModInt> = fa.iter().zip(&fb).map(|(x, y)| x.mul(*y)).collect();
+        self.transform(&mut fc, true);
+        fc.iter().map(|x| x.val).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modpow_and_inv() {
+        let a = ModInt::new(3, 3329);
+        assert_eq!(a.pow(0).val, 1);
+        let inv = a.inv().unwrap();
+        assert_eq!(a.mul(inv).val, 1);
+    }
+
+    #[test]
+    fn ntt_matches_naive_convolution() {
+        // Kyber prime 3329, n=256 | 3328, primitive root 3.
+        let ctx = NttCtx::new(3329, 8, 3).expect("ntt-friendly");
+        let a = [1u64, 2, 3, 4, 0, 0, 0, 0];
+        let b = [5u64, 6, 7, 8, 0, 0, 0, 0];
+        let got = ctx.convolve(&a, &b);
+        // naive cyclic convolution mod 3329
+        let n = 8;
+        let mut want = vec![0u64; n];
+        for (i, &ai) in a.iter().enumerate() {
+            for (j, &bj) in b.iter().enumerate() {
+                want[(i + j) % n] = (want[(i + j) % n] + ai * bj) % 3329;
+            }
+        }
+        assert_eq!(got, want);
+    }
+}

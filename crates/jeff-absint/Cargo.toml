@@ -1,0 +1,11 @@
+[package]
+name = "jeff-absint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GACC crate jeff-absint (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+
+[dependencies]
+
+[lints]
+workspace = true

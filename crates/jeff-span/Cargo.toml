@@ -1,0 +1,12 @@
+[package]
+name = "jeff-span"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Source spans and diagnostics for the JEFF/GACC compiler (CLAUDE.md APPENDIX H.1, R37)."
+
+[dependencies]
+serde = { workspace = true }
+
+[lints]
+workspace = true

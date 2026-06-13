@@ -1,0 +1,16 @@
+[package]
+name = "jeff-math"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Exact arithmetic backbone for GACC: multivariate/univariate polynomials over Q, modular integers, rational matrices (charpoly), GF(2) linear algebra. Backs sound certificate checking (CLAUDE.md PART 11, APPENDIX F)."
+
+[dependencies]
+num-bigint = { workspace = true }
+num-rational = { workspace = true }
+num-integer = { workspace = true }
+num-traits = { workspace = true }
+serde = { workspace = true }
+
+[lints]
+workspace = true

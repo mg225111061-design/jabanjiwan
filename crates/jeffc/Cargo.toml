@@ -1,0 +1,15 @@
+[package]
+name = "jeffc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "jeffc driver / CLI (CLAUDE.md PART 5.3). Stub at T0.1."
+
+[[bin]]
+name = "jeffc"
+path = "src/main.rs"
+
+[dependencies]
+
+[lints]
+workspace = true

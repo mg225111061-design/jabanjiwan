@@ -1,0 +1,78 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/jeff-span",
+    "crates/jeff-math",
+    "crates/jeff-cert",
+    "crates/jeff-verify",
+    "crates/jeff-syntax",
+    "crates/jeff-core-ir",
+    "crates/jeff-types",
+    "crates/jeff-absint",
+    "crates/jeff-recognizer",
+    "crates/jeff-collapse-arith",
+    "crates/jeff-collapse-gf2",
+    "crates/jeff-collapse-holographic",
+    "crates/jeff-collapse-tensor",
+    "crates/jeff-barvinok",
+    "crates/jeff-jlir",
+    "crates/jeff-backend",
+    "crates/jeff-codegen",
+    "crates/jeff-stdlib",
+    "crates/jeffc",
+    "crates/jeff-test-oracles",
+]
+
+# JEFF / GACC compiler workspace.
+# Build constitution: see CLAUDE.md (PRIORITY: P0 never-miscompile > P1 honesty >
+# P2 proof-carrying > P3 conservation > P4 performance > P5 DX).
+#
+# Licensing gate (CLAUDE.md PART 3 R5 / APPENDIX M D9): only MIT / Apache-2.0 / BSD.
+# Forbidden as *linked* deps: barvinok, LattE, PPL, GMP (gmp-mpfr-sys / rug), M4RI.
+# GPL tools are out-of-process, dev-only, in jeff-test-oracles.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.80"
+
+[workspace.dependencies]
+# Exact arithmetic backbone (MIT/Apache). NOTE (R5/D9): num-bigint, NOT GMP/rug (LGPL).
+num-bigint = { version = "0.4", features = ["serde"] }
+num-rational = { version = "0.4", features = ["serde"] }
+num-integer = "0.1"
+num-traits = "0.2"
+# Certificate serialization (PART 11 / APPENDIX H.3). MIT/Apache.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# internal crates
+jeff-span = { path = "crates/jeff-span" }
+jeff-math = { path = "crates/jeff-math" }
+jeff-cert = { path = "crates/jeff-cert" }
+jeff-verify = { path = "crates/jeff-verify" }
+jeff-syntax = { path = "crates/jeff-syntax" }
+jeff-core-ir = { path = "crates/jeff-core-ir" }
+jeff-types = { path = "crates/jeff-types" }
+jeff-absint = { path = "crates/jeff-absint" }
+jeff-recognizer = { path = "crates/jeff-recognizer" }
+jeff-collapse-arith = { path = "crates/jeff-collapse-arith" }
+jeff-collapse-gf2 = { path = "crates/jeff-collapse-gf2" }
+jeff-collapse-holographic = { path = "crates/jeff-collapse-holographic" }
+jeff-collapse-tensor = { path = "crates/jeff-collapse-tensor" }
+jeff-barvinok = { path = "crates/jeff-barvinok" }
+jeff-jlir = { path = "crates/jeff-jlir" }
+jeff-backend = { path = "crates/jeff-backend" }
+jeff-codegen = { path = "crates/jeff-codegen" }
+jeff-stdlib = { path = "crates/jeff-stdlib" }
+jeff-test-oracles = { path = "crates/jeff-test-oracles" }
+
+# Deny warnings at the workspace level so `cargo clippy -- -D warnings` (PART 15) is
+# the same gate everywhere (R13).
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+# Deterministic builds (R11): keep codegen stable.
+opt-level = 2
