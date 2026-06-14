@@ -12,6 +12,7 @@
 pub mod complex;
 pub mod fmat;
 pub mod frame;
+pub mod geometry;
 pub mod gf2;
 pub mod hyper;
 pub mod lattice;

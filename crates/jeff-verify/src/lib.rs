@@ -756,6 +756,71 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+
+            // ---- Batch 4: geometry / dimension / topology ----
+            Evidence::PersistentHomology { dist, n, band, feature_count } => {
+                if dist.len() != n * n || band.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let c = jeff_math::geometry::persistent_feature_count(dist, *n, *band);
+                if c == *feature_count && c >= 1 {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::JlProjection { points, proj, n, d, k, eps } => {
+                if points.len() != n * d || proj.len() != n * k || eps.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                if jeff_math::geometry::max_distortion(points, proj, *n, *d, *k) <= *eps {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::SpectralCluster { w, n, k, gap_min } => {
+                if w.len() != n * n || gap_min.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                if jeff_math::geometry::cluster_eigengap(w, *n, *k) >= *gap_min {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::DiffusionMap { w, n, m, gap_min } => {
+                if w.len() != n * n || gap_min.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                if jeff_math::geometry::diffusion_gap(w, *n, *m) >= *gap_min {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::Isomap { dist, n, k_nn, m, tol } => {
+                if dist.len() != n * n || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let (resid, _) = jeff_math::geometry::isomap_residual(dist, *n, *k_nn, *m);
+                if resid <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::IntrinsicDim { points, n, d, k1, k2, claimed_dim, tol } => {
+                if points.len() != n * d || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let est = jeff_math::geometry::intrinsic_dimension(points, *n, *d, *k1, *k2);
+                if (est - claimed_dim).abs() <= *tol && *claimed_dim < *d as f64 {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -806,7 +871,13 @@ impl Checker for DefaultRegistry {
             | Evidence::HmmRank { .. }
             | Evidence::MomentFactorization { .. }
             | Evidence::MomentMixture { .. }
-            | Evidence::IcaProjection { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::IcaProjection { .. }
+            | Evidence::PersistentHomology { .. }
+            | Evidence::JlProjection { .. }
+            | Evidence::SpectralCluster { .. }
+            | Evidence::DiffusionMap { .. }
+            | Evidence::Isomap { .. }
+            | Evidence::IntrinsicDim { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -849,6 +920,12 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::MomentFactorization { .. } => "moment-reconstruction",
         Evidence::MomentMixture { .. } => "moment-mixture-replay",
         Evidence::IcaProjection { .. } => "ica-kurtosis",
+        Evidence::PersistentHomology { .. } => "ph-mst-exact",
+        Evidence::JlProjection { .. } => "jl-distortion",
+        Evidence::SpectralCluster { .. } => "laplacian-eigengap",
+        Evidence::DiffusionMap { .. } => "diffusion-gap",
+        Evidence::Isomap { .. } => "isomap-residual",
+        Evidence::IntrinsicDim { .. } => "levina-bickel-mle",
     }
 }
 
@@ -1314,6 +1391,30 @@ mod tests {
             factors: vec![1.0, 0.0], // a = e0 ⇒ reconstructs only T[0,0,0]=1, misses T[1,1,1]=5
             tol: 1e-6,
         };
+        assert!(verify(cert(ev)).is_none());
+    }
+
+    // ===== Stage 6A Batch 4: geometry / dimension / topology certificates =====
+
+    #[test]
+    fn persistent_homology_valid_and_false_count_rejected() {
+        // two clusters: exactly 2 features above band 1.0.
+        let pts = vec![0.0, 0.0, 0.1, 0.0, 10.0, 10.0, 10.1, 10.0];
+        let dist = jeff_math::geometry::pairwise_distances(&pts, 4, 2);
+        let ev = Evidence::PersistentHomology { dist: dist.clone(), n: 4, band: 1.0, feature_count: 2 };
+        assert_eq!(ev.cert_class(), jeff_cert::CertClass::Exact);
+        assert!(verify(cert(ev)).is_some());
+        // a wrong feature count is rejected
+        let bad = Evidence::PersistentHomology { dist, n: 4, band: 1.0, feature_count: 5 };
+        assert!(verify(cert(bad)).is_none());
+    }
+
+    #[test]
+    fn false_eigengap_rejected() {
+        // uniform similarity has no 2-cluster eigengap → a claimed gap is rejected.
+        let n = 6;
+        let w = vec![1.0; n * n];
+        let ev = Evidence::SpectralCluster { w, n, k: 2, gap_min: 0.3 };
         assert!(verify(cert(ev)).is_none());
     }
 

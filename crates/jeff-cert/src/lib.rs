@@ -485,6 +485,63 @@ pub enum Evidence {
         direction: Vec<f64>,
         threshold: f64,
     },
+
+    // ---- Stage 6A Batch 4: geometry / dimension / topology ----
+    /// 4.1 Persistent homology (H0): `dist` flat `n×n`. Checker recomputes the MST
+    /// persistence and verifies the number of features with persistence > `band` equals
+    /// `feature_count` (the bottleneck-stability bound is the exactness guarantee).
+    PersistentHomology {
+        dist: Vec<f64>,
+        n: usize,
+        band: f64,
+        feature_count: usize,
+    },
+    /// 4.2 JL projection: `points` (`n×d`), `proj` (`n×k`). Checker verifies the realized
+    /// max pairwise distortion ≤ `eps`.
+    JlProjection {
+        points: Vec<f64>,
+        proj: Vec<f64>,
+        n: usize,
+        d: usize,
+        k: usize,
+        eps: f64,
+    },
+    /// 4.3 Spectral clustering: similarity `w` flat `n×n`. Checker verifies the
+    /// normalized-Laplacian eigengap after `k` is ≥ `gap_min` (k clusters).
+    SpectralCluster {
+        w: Vec<f64>,
+        n: usize,
+        k: usize,
+        gap_min: f64,
+    },
+    /// 4.4 Diffusion map: similarity `w` flat `n×n`. Checker verifies the diffusion
+    /// spectral gap after `m` is ≥ `gap_min` (m-dim parametrization).
+    DiffusionMap {
+        w: Vec<f64>,
+        n: usize,
+        m: usize,
+        gap_min: f64,
+    },
+    /// 4.5 Isomap: `dist` flat `n×n`. Checker verifies the geodesic-MDS residual variance
+    /// at dimension `m` is ≤ `tol`.
+    Isomap {
+        dist: Vec<f64>,
+        n: usize,
+        k_nn: usize,
+        m: usize,
+        tol: f64,
+    },
+    /// 4.6 Intrinsic dimension (Levina–Bickel MLE): `points` flat `n×d`. Checker
+    /// recomputes the MLE and verifies it equals `claimed_dim` ± tol AND `< d`.
+    IntrinsicDim {
+        points: Vec<f64>,
+        n: usize,
+        d: usize,
+        k1: usize,
+        k2: usize,
+        claimed_dim: f64,
+        tol: f64,
+    },
 }
 
 impl Evidence {
@@ -545,6 +602,14 @@ impl Evidence {
             | Evidence::MomentFactorization { .. }
             | Evidence::MomentMixture { .. }
             | Evidence::IcaProjection { .. } => CertClass::EpsApproximate,
+            // Batch 4: topology exact (stability theorem); JL high-probability; spectral
+            // clustering threshold-conditional; the rest eps-approximate.
+            Evidence::PersistentHomology { .. } => CertClass::Exact,
+            Evidence::JlProjection { .. } => CertClass::HighProbability,
+            Evidence::SpectralCluster { .. } => CertClass::ThresholdConditional,
+            Evidence::DiffusionMap { .. }
+            | Evidence::Isomap { .. }
+            | Evidence::IntrinsicDim { .. } => CertClass::EpsApproximate,
         }
     }
 }
