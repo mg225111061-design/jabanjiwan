@@ -18,6 +18,7 @@ pub mod lattice;
 pub mod linsolve;
 pub mod matrix;
 pub mod modular;
+pub mod moments;
 pub mod nbody;
 pub mod ot;
 pub mod planted;

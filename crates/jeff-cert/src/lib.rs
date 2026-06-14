@@ -434,6 +434,57 @@ pub enum Evidence {
         n: usize,
         m: usize,
     },
+
+    // ---- Stage 6A Batch 3: latent-variable / moment methods (eps-approximate) ----
+    /// 3.1 Orthogonal tensor decomposition: `T = Σ λ_i a_i⊗³` (factors row-major `r×p`).
+    /// Checker recomputes `‖T − Σ λ_i a_i⊗³‖_F ≤ tol`.
+    TensorDecomp {
+        tensor: Vec<f64>,
+        p: usize,
+        r: usize,
+        lambdas: Vec<f64>,
+        factors: Vec<f64>,
+        tol: f64,
+    },
+    /// 3.2 Spectral HMM: the bigram moment matrix `bigram` (flat `rows×cols`) is rank-`m`.
+    /// Checker verifies rank-`m` residual ≤ tol AND singular gap `σ_m/σ_{m+1} ≥ gap_min`.
+    HmmRank {
+        bigram: Vec<f64>,
+        rows: usize,
+        cols: usize,
+        m: usize,
+        tol: f64,
+        gap_min: f64,
+    },
+    /// 3.3 Mixture moment factorization: `M2` (flat `p×p`) and `M3` (flat `p³`) factor as
+    /// `Σ w_i μ_i⊗ᵈ`. Checker verifies both reconstruction residuals ≤ tol.
+    MomentFactorization {
+        m2: Vec<f64>,
+        m3: Vec<f64>,
+        p: usize,
+        k: usize,
+        weights: Vec<f64>,
+        means: Vec<f64>,
+        tol: f64,
+    },
+    /// 3.4 Mixture of point masses from moments: `m_t = Σ w_j x_j^t`. Checker recomputes
+    /// the moment sequence from `(weights, locations)` and verifies it matches ≤ tol.
+    MomentMixture {
+        moments: Vec<f64>,
+        k: usize,
+        weights: Vec<f64>,
+        locations: Vec<f64>,
+        tol: f64,
+    },
+    /// 3.5 ICA projection: a `direction` whose projection of `data` (flat `n×p`) is
+    /// non-Gaussian. Checker verifies `|excess kurtosis| ≥ threshold`.
+    IcaProjection {
+        data: Vec<f64>,
+        n: usize,
+        p: usize,
+        direction: Vec<f64>,
+        threshold: f64,
+    },
 }
 
 impl Evidence {
@@ -488,6 +539,12 @@ impl Evidence {
             | Evidence::SpikedTensor { .. }
             | Evidence::SparsePca { .. }
             | Evidence::XorRefutation { .. } => CertClass::ThresholdConditional,
+            // Batch 3: moment/spectral reconstruction — eps-approximate.
+            Evidence::TensorDecomp { .. }
+            | Evidence::HmmRank { .. }
+            | Evidence::MomentFactorization { .. }
+            | Evidence::MomentMixture { .. }
+            | Evidence::IcaProjection { .. } => CertClass::EpsApproximate,
         }
     }
 }

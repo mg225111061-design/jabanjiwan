@@ -693,6 +693,69 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+
+            // ---- Batch 3: latent-variable / moment methods ----
+            Evidence::TensorDecomp { tensor, p, r, lambdas, factors, tol } => {
+                if tensor.len() != p * p * p || lambdas.len() != *r || factors.len() != r * p || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let resid = jeff_math::moments::tensor_decomp_residual(tensor, lambdas, factors, *r, *p);
+                if resid <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::HmmRank { bigram, rows, cols, m, tol, gap_min } => {
+                if bigram.len() != rows * cols || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let (resid, gap) = jeff_math::moments::bigram_rank_residual(bigram, *rows, *cols, *m);
+                if resid <= *tol && gap >= *gap_min {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::MomentFactorization { m2, m3, p, k, weights, means, tol } => {
+                if m2.len() != p * p || m3.len() != p * p * p || weights.len() != *k || means.len() != k * p || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let r2 = jeff_math::moments::moment2_residual(m2, weights, means, *k, *p);
+                let r3 = jeff_math::moments::tensor_decomp_residual(m3, weights, means, *k, *p);
+                if r2 <= *tol && r3 <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::MomentMixture { moments, k, weights, locations, tol } => {
+                if weights.len() != *k || locations.len() != *k || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                // recompute m_t = Σ w_j x_j^t and compare to the claimed moment sequence
+                let mut worst = 0.0_f64;
+                for (t, &mt) in moments.iter().enumerate() {
+                    let got: f64 = (0..*k).map(|j| weights[j] * locations[j].powi(t as i32)).sum();
+                    worst = worst.max((got - mt).abs());
+                }
+                if worst <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::IcaProjection { data, n, p, direction, threshold } => {
+                if data.len() != n * p || direction.len() != *p || threshold.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let ek = jeff_math::moments::excess_kurtosis(data, *n, *p, direction);
+                if ek.abs() >= *threshold {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -738,7 +801,12 @@ impl Checker for DefaultRegistry {
             | Evidence::SbmCommunity { .. }
             | Evidence::SpikedTensor { .. }
             | Evidence::SparsePca { .. }
-            | Evidence::XorRefutation { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::XorRefutation { .. }
+            | Evidence::TensorDecomp { .. }
+            | Evidence::HmmRank { .. }
+            | Evidence::MomentFactorization { .. }
+            | Evidence::MomentMixture { .. }
+            | Evidence::IcaProjection { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -776,6 +844,11 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::SpikedTensor { .. } => "tensor-unfold-residual",
         Evidence::SparsePca { .. } => "sparsepca-quadform",
         Evidence::XorRefutation { .. } => "xor-spectral-refutation",
+        Evidence::TensorDecomp { .. } => "tensor-decomp-residual",
+        Evidence::HmmRank { .. } => "hmm-rank-gap",
+        Evidence::MomentFactorization { .. } => "moment-reconstruction",
+        Evidence::MomentMixture { .. } => "moment-mixture-replay",
+        Evidence::IcaProjection { .. } => "ica-kurtosis",
     }
 }
 
@@ -1201,6 +1274,47 @@ mod tests {
         // a single constraint cannot be refuted → bound = m, not < m → reject.
         let sa1 = jeff_math::planted::signed_adjacency(&[(0, 1, 0)], n);
         assert!(verify(cert(Evidence::XorRefutation { signed_adj: sa1, n, m: 1 })).is_none());
+    }
+
+    // ===== Stage 6A Batch 3: latent-variable / moment certificates =====
+
+    #[test]
+    fn moment_mixture_valid_and_false_rejected() {
+        // m_t = 0.7·2^t + 0.3·5^t
+        let moments: Vec<f64> = (0..6).map(|t| 0.7 * 2f64.powi(t) + 0.3 * 5f64.powi(t)).collect();
+        let ev = Evidence::MomentMixture {
+            moments: moments.clone(),
+            k: 2,
+            weights: vec![0.7, 0.3],
+            locations: vec![2.0, 5.0],
+            tol: 1e-9,
+        };
+        assert!(verify(cert(ev)).is_some());
+        // wrong locations don't reproduce the moments → reject
+        let bad = Evidence::MomentMixture {
+            moments,
+            k: 2,
+            weights: vec![0.7, 0.3],
+            locations: vec![3.0, 4.0],
+            tol: 1e-9,
+        };
+        assert!(verify(cert(bad)).is_none());
+    }
+
+    #[test]
+    fn false_tensor_decomp_rejected() {
+        // claim a rank-1 decomposition of a tensor that isn't rank-1 from those factors.
+        let p = 2;
+        let tensor = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0]; // T[0,0,0]=1, T[1,1,1]=5
+        let ev = Evidence::TensorDecomp {
+            tensor,
+            p,
+            r: 1,
+            lambdas: vec![1.0],
+            factors: vec![1.0, 0.0], // a = e0 ⇒ reconstructs only T[0,0,0]=1, misses T[1,1,1]=5
+            tol: 1e-6,
+        };
+        assert!(verify(cert(ev)).is_none());
     }
 
     // ===== Verifier-integrity tripwires (MIDBUILD_AUDIT §A.1) =====
