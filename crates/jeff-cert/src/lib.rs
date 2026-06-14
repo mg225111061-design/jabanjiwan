@@ -17,7 +17,7 @@
 //! certificate-replay tests (R25) guarantee the checker is sound, not a stub that
 //! always says Valid (which would be the PART 18 #6 anti-pattern).
 
-use jeff_math::{Gf2Matrix, Gf2Vec, Poly, RatMatrix, UniPoly};
+use jeff_math::{Gf2Matrix, Gf2Vec, HyperTerm, Poly, RatFunc, RatMatrix};
 use jeff_span::{Diagnostic, Span};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -73,21 +73,6 @@ impl Boundary {
             description: d.into(),
         }
     }
-}
-
-/// A rational function `num / den` over the multivariate polynomials (Telescoper
-/// certificate rational part).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RatFn {
-    pub num: Poly,
-    pub den: Poly,
-}
-
-/// A linear recurrence operator `L = Σ_i a_i(n) · S^i` (the shift `S: n ↦ n+1`),
-/// with `coeffs[i] = a_i(n)` a univariate polynomial in `n`. Telescoper output.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Operator {
-    pub coeffs: Vec<UniPoly>,
 }
 
 /// Witness for a planar #CSP / Pfaffian collapse (APPENDIX E.5), replayed exactly
@@ -152,16 +137,25 @@ pub struct SamplePoint {
 /// * `EigenCharpoly`      → Cayley–Hamilton ring identity (F.5)
 /// * `NumericResidual`    → exact modular/int replay (F.6)
 /// * `PfaffianHolant`     → Pfaffian/det replay (E.5)
+// Evidence variants differ in size (HyperTerm / GF(2) circuit are large), but
+// Evidence is never hot-path-copied: it lives inside a `Certificate`, which is
+// boxed in `JlirRegion::Origin` and otherwise passed by reference to checkers. So
+// boxing every variant would add deref churn for no real benefit.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Evidence {
     /// The difference polynomial that must be identically zero.
     PolynomialIdentity { poly: Poly },
-    /// Telescoper `L` and rational certificate `R`; plus the proper-hypergeometric
-    /// identity rendered as a polynomial that must vanish (checked like F.2).
+    /// Holonomic telescoper / Gosper certificate (APPENDIX E.1/E.2, F.2). Carries
+    /// the hypergeometric term `F`, the telescoper coefficients `a_i(n)` (as `l[i]`,
+    /// multiplying `F(n+i,k)/F(n,k)`), and the rational certificate `R(n,k)`. The
+    /// checker recomputes `R(n,k+1)·F(n,k+1)/F(n,k) − R(n,k) − Σ a_i·F(n+i,k)/F(n,k)`
+    /// from these and confirms its numerator is identically zero — independent of
+    /// the collapser (R2/R25). Indefinite Gosper is the special case `l = [1]`.
     Telescoper {
-        l: Operator,
-        r: RatFn,
-        identity: Poly,
+        term: HyperTerm,
+        l: Vec<RatFunc>,
+        r: RatFunc,
     },
     /// Circuit captured as its linear action `M·x ⊕ b`. The checker re-evaluates
     /// the original circuit on `{0, e_i}` (carried in `circuit`) and confirms it
@@ -365,6 +359,9 @@ impl Defer {
 /// The result of attempting a collapse: either a verified `Collapsed` (whole, R32:
 /// no half-collapse) or an honest `Defer` (R4). A collapser never returns a partial
 /// or unverified result (E.7).
+// Returned by value once per collapse attempt (not bulk-stored), so the variant
+// size spread (Collapsed carries the certificate) is not worth boxing churn.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum CollapseOutcome {
     Collapsed(Collapsed),

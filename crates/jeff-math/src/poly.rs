@@ -239,6 +239,37 @@ impl Poly {
         Some(acc)
     }
 
+    /// Substitute a variable by an arbitrary polynomial (`name := repl`). Enables
+    /// shifting an argument by a polynomial, the workhorse of the holonomic
+    /// telescoper checker (shift k→k+1, n→n+j).
+    pub fn subst_var_poly(&self, name: &str, repl: &Poly) -> Poly {
+        let mut out = Poly::zero();
+        for (m, c) in &self.terms {
+            let mut e_name = 0u32;
+            let mut rest = Monomial::new();
+            for (v, e) in m {
+                if v == name {
+                    e_name += e;
+                } else {
+                    rest.push((v.clone(), *e));
+                }
+            }
+            let mut term = Poly::zero();
+            term.add_term(rest, c.clone());
+            if e_name > 0 {
+                term = term.mul(&repl.pow(e_name));
+            }
+            out = out.add(&term);
+        }
+        out
+    }
+
+    /// Shift a variable by an integer constant: returns `self[name := name + s]`.
+    pub fn shift_var(&self, name: &str, s: i64) -> Poly {
+        let repl = Poly::var(name).add(&Poly::constant(BigRational::from(BigInt::from(s))));
+        self.subst_var_poly(name, &repl)
+    }
+
     /// Pretty representation (deterministic order), used in certificate JSON
     /// (APPENDIX H.3) and diagnostics.
     pub fn to_canonical_string(&self) -> String {
@@ -507,6 +538,26 @@ mod tests {
 
     fn r(n: i64) -> BigRational {
         BigRational::from(BigInt::from(n))
+    }
+
+    #[test]
+    fn shift_var_expands_binomially() {
+        // p = n^2 ; p[n := n+1] = n^2 + 2n + 1
+        let n = Poly::var("n");
+        let p = n.mul(&n);
+        let s = p.shift_var("n", 1);
+        let expect = n.mul(&n).add(&n.scale(&r(2))).add(&Poly::from_i64(1));
+        assert_eq!(s, expect);
+    }
+
+    #[test]
+    fn subst_var_poly_two_vars() {
+        // p = n*k ; p[k := k+1] = n*k + n
+        let n = Poly::var("n");
+        let k = Poly::var("k");
+        let p = n.mul(&k);
+        let s = p.shift_var("k", 1);
+        assert_eq!(s, n.mul(&k).add(&n));
     }
 
     #[test]

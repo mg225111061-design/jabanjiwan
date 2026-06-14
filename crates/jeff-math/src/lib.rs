@@ -10,11 +10,15 @@
 //! (MIT/Apache), never GMP/`rug` (LGPL).
 
 pub mod gf2;
+pub mod hyper;
 pub mod matrix;
 pub mod modular;
 pub mod poly;
+pub mod ratfun;
 
 pub use gf2::{Gf2Matrix, Gf2Vec};
+pub use hyper::{HyperTerm, LinForm};
 pub use matrix::{bostan_mori, ModMatrix, RatMatrix};
 pub use modular::{ModInt, NttCtx};
 pub use poly::{Poly, UniPoly};
+pub use ratfun::RatFunc;

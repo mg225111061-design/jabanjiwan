@@ -312,4 +312,35 @@ mod tests {
         assert!(matches!(ac.outcome, CollapseOutcome::Defer(_)));
         assert!(ac.residual.is_none());
     }
+
+    // Negative tests (checkpoint 01 addendum "small thing"): a non-polynomial body
+    // must produce an HONEST_DEFER, never a wrongly-interpolated closed form. The
+    // `to_unipoly` gate refuses non-polynomial structure; the difference-identity
+    // verify is the second safety net. Pin both explicitly.
+    #[test]
+    fn defers_geometric_body_not_wrong_closed_form() {
+        // sum i in 0..n: 2**i is geometric, NOT a polynomial in i.
+        let f = fn_of("total fn s(n: nat) -> nat: sum i in 0..n: 2**i\n");
+        let ac = collapse(&f);
+        assert!(matches!(ac.outcome, CollapseOutcome::Defer(_)), "geometric must defer");
+        assert!(ac.residual.is_none());
+    }
+
+    #[test]
+    fn defers_modulo_body_not_wrong_closed_form() {
+        // sum i in 0..=n: i % 2 is not a polynomial in i (Rem) → defer.
+        let f = fn_of("total fn s(n: nat) -> nat: sum i in 0..=n: i % 2\n");
+        let ac = collapse(&f);
+        assert!(matches!(ac.outcome, CollapseOutcome::Defer(_)), "modulo must defer");
+        assert!(ac.residual.is_none());
+    }
+
+    #[test]
+    fn defers_non_constant_exponent_not_wrong_closed_form() {
+        // sum i in 0..=n: i**i has a non-constant exponent → not polynomial → defer.
+        let f = fn_of("total fn s(n: nat) -> nat: sum i in 0..=n: i**i\n");
+        let ac = collapse(&f);
+        assert!(matches!(ac.outcome, CollapseOutcome::Defer(_)), "i**i must defer");
+        assert!(ac.residual.is_none());
+    }
 }

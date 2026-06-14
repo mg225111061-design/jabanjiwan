@@ -48,11 +48,11 @@ impl Checker for PolyChecker {
                     VerifyResult::Invalid
                 }
             }
-            Evidence::Telescoper { identity, .. } => {
-                // The creative-telescoping identity, cleared of denominators, is a
-                // polynomial that must vanish (F.2). The operator `l` and rational
-                // `r` are carried for the record; soundness rests on `identity≡0`.
-                if identity.is_zero() {
+            Evidence::Telescoper { term, l, r } => {
+                // Independently recompute the telescoper certificate numerator from
+                // (F, L, R) and confirm it is identically zero (F.2). The checker
+                // does the work, not the collapser (R2/R25): a wrong (L,R) fails.
+                if jeff_math::hyper::telescoper_holds(term, l, r) {
                     VerifyResult::Valid
                 } else {
                     VerifyResult::Invalid
@@ -274,8 +274,8 @@ impl Checker for DefaultRegistry {
 pub fn checker_name(ev: &Evidence) -> &'static str {
     match ev {
         Evidence::PolynomialIdentity { .. } => "exact-coeff-zero",
-        Evidence::Telescoper { .. } => "exact-poly-identity",
         Evidence::EigenCharpoly { .. } => "cayley-hamilton",
+        Evidence::Telescoper { .. } => "exact-telescoper",
         Evidence::Gf2LinearIdentity { .. } => "gf2-basis",
         Evidence::NumericResidual { .. } => "exact-replay",
         Evidence::PfaffianHolant { .. } => "pfaffian-replay",
@@ -448,6 +448,55 @@ mod tests {
             },
         };
         assert!(verify(cert(bad_pf)).is_none());
+    }
+
+    /// Tripwire `false_telescoper_rejected` (Stage 1, checker-first): the telescoper
+    /// checker accepts the hand-verified certificate for Σ_k C(n,k) = 2^n and
+    /// rejects a wrong operator or a wrong rational certificate. Proven here, in the
+    /// verify layer, BEFORE the Zeilberger collapser exists (R2).
+    #[test]
+    fn false_telescoper_rejected() {
+        use jeff_math::hyper::{HyperTerm, LinForm};
+        use jeff_math::{Poly, RatFunc};
+        // C(n,k) = Γ(n+1)/(Γ(k+1)Γ(n-k+1))
+        let term = HyperTerm {
+            coeff: num_rational::BigRational::from(BigInt::from(1)),
+            z_k: num_rational::BigRational::from(BigInt::from(1)),
+            poly: Poly::from_i64(1),
+            gammas: vec![
+                (LinForm::new(1, 0, 1), 1),
+                (LinForm::new(0, 1, 1), -1),
+                (LinForm::new(1, -1, 1), -1),
+            ],
+        };
+        let good_l = vec![RatFunc::from_i64(-2), RatFunc::from_i64(1)];
+        let good_r = RatFunc::new(
+            Poly::var("k").neg(),
+            Poly::var("n").add(&Poly::from_i64(1)).sub(&Poly::var("k")),
+        );
+        // positive: the real certificate verifies through the gate.
+        assert!(verify(cert(Evidence::Telescoper {
+            term: term.clone(),
+            l: good_l.clone(),
+            r: good_r.clone(),
+        }))
+        .is_some());
+        // negative: wrong operator → reject.
+        let bad_l = vec![RatFunc::from_i64(-3), RatFunc::from_i64(1)];
+        assert!(verify(cert(Evidence::Telescoper {
+            term: term.clone(),
+            l: bad_l,
+            r: good_r,
+        }))
+        .is_none());
+        // negative: wrong certificate → reject.
+        let bad_r = RatFunc::new(Poly::var("k").neg(), Poly::var("n").sub(&Poly::var("k")));
+        assert!(verify(cert(Evidence::Telescoper {
+            term,
+            l: good_l,
+            r: bad_r,
+        }))
+        .is_none());
     }
 
     /// Tripwire `sorry_yields_fallback`: when the checker cannot discharge the
