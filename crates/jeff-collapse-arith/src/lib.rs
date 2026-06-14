@@ -23,6 +23,7 @@ pub mod kernels;
 pub mod moments;
 pub mod planted;
 pub mod sparse;
+pub mod streaming;
 pub mod zeilberger;
 
 use jeff_cert::{

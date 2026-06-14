@@ -821,6 +821,66 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+
+            // ---- Batch 5: streaming sketches (estimate vs exact oracle) ----
+            Evidence::StreamF2 { items, estimate, lambda } => {
+                if lambda.is_nan() || estimate.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let exact = jeff_math::streaming::exact_f2(items) as f64;
+                if (estimate - exact).abs() <= *lambda * exact {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::CountMinQuery { items, key, estimate, eps } => {
+                if eps.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let exact = jeff_math::streaming::exact_freq(items, *key);
+                // Count-Min never underestimates and overshoots by ≤ ε‖f‖₁.
+                if *estimate >= exact && (*estimate as f64) <= exact as f64 + eps * items.len() as f64 {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::DistinctCount { items, estimate, rel_err } => {
+                if rel_err.is_nan() || estimate.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let exact = jeff_math::streaming::exact_distinct(items) as f64;
+                if (estimate - exact).abs() <= *rel_err * exact {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::HeavyHitters { items, hitters, phi } => {
+                if phi.is_nan() || hitters.is_empty() {
+                    return VerifyResult::Invalid;
+                }
+                let n = items.len() as f64;
+                // every reported item must be a genuine heavy hitter (freq ≥ φn).
+                for &h in hitters {
+                    if (jeff_math::streaming::exact_freq(items, h) as f64) < *phi * n {
+                        return VerifyResult::Invalid;
+                    }
+                }
+                VerifyResult::Valid
+            }
+            Evidence::SublinearMean { values, estimate, lambda } => {
+                if lambda.is_nan() || estimate.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let exact = jeff_math::streaming::exact_mean(values);
+                if (estimate - exact).abs() <= *lambda {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -877,7 +937,12 @@ impl Checker for DefaultRegistry {
             | Evidence::SpectralCluster { .. }
             | Evidence::DiffusionMap { .. }
             | Evidence::Isomap { .. }
-            | Evidence::IntrinsicDim { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::IntrinsicDim { .. }
+            | Evidence::StreamF2 { .. }
+            | Evidence::CountMinQuery { .. }
+            | Evidence::DistinctCount { .. }
+            | Evidence::HeavyHitters { .. }
+            | Evidence::SublinearMean { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -926,6 +991,11 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::DiffusionMap { .. } => "diffusion-gap",
         Evidence::Isomap { .. } => "isomap-residual",
         Evidence::IntrinsicDim { .. } => "levina-bickel-mle",
+        Evidence::StreamF2 { .. } => "ams-f2-vs-exact",
+        Evidence::CountMinQuery { .. } => "count-min-bound",
+        Evidence::DistinctCount { .. } => "hll-vs-exact",
+        Evidence::HeavyHitters { .. } => "heavy-hitter-exact",
+        Evidence::SublinearMean { .. } => "mean-vs-exact",
     }
 }
 
@@ -1415,6 +1485,37 @@ mod tests {
         let n = 6;
         let w = vec![1.0; n * n];
         let ev = Evidence::SpectralCluster { w, n, k: 2, gap_min: 0.3 };
+        assert!(verify(cert(ev)).is_none());
+    }
+
+    // ===== Stage 6A Batch 5: streaming sketch certificates =====
+
+    #[test]
+    fn streaming_estimates_valid_and_false_rejected() {
+        let items: Vec<u64> = {
+            let mut v = vec![7u64; 300];
+            v.extend((0..100).map(|i| i as u64 + 50));
+            v
+        };
+        // F₂ within bound
+        let exact_f2 = jeff_math::streaming::exact_f2(&items) as f64;
+        assert!(verify(cert(Evidence::StreamF2 { items: items.clone(), estimate: exact_f2, lambda: 0.1 })).is_some());
+        // a wildly wrong F₂ is rejected
+        assert!(verify(cert(Evidence::StreamF2 { items: items.clone(), estimate: 1.0, lambda: 0.1 })).is_none());
+
+        // a "heavy hitter" that isn't heavy is rejected
+        let bad = Evidence::HeavyHitters { items: items.clone(), hitters: vec![50], phi: 0.3 };
+        assert!(verify(cert(bad)).is_none());
+        // the genuine heavy hitter passes
+        let good = Evidence::HeavyHitters { items, hitters: vec![7], phi: 0.3 };
+        assert!(verify(cert(good)).is_some());
+    }
+
+    #[test]
+    fn count_min_underestimate_rejected() {
+        // Count-Min never underestimates; a claimed estimate below the truth is invalid.
+        let items = vec![3u64; 100];
+        let ev = Evidence::CountMinQuery { items, key: 3, estimate: 50, eps: 0.01 };
         assert!(verify(cert(ev)).is_none());
     }
 

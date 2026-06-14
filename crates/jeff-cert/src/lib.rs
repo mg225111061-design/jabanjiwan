@@ -542,6 +542,42 @@ pub enum Evidence {
         claimed_dim: f64,
         tol: f64,
     },
+
+    // ---- Stage 6A Batch 5: streaming / sublinear sketches (eps-approximate vs oracle) ----
+    /// 5.1 AMS F₂: checker recomputes exact `F₂` from `items` and verifies
+    /// `|estimate − F₂| ≤ lambda·F₂`.
+    StreamF2 {
+        items: Vec<u64>,
+        estimate: f64,
+        lambda: f64,
+    },
+    /// 5.2 Count-Min point query: checker verifies `exact ≤ estimate ≤ exact + eps·‖f‖₁`.
+    CountMinQuery {
+        items: Vec<u64>,
+        key: u64,
+        estimate: u64,
+        eps: f64,
+    },
+    /// 5.3 Distinct count (HLL): checker verifies `|estimate − exact| ≤ rel_err·exact`.
+    DistinctCount {
+        items: Vec<u64>,
+        estimate: f64,
+        rel_err: f64,
+    },
+    /// 5.4 Heavy hitters: checker verifies each reported item has exact frequency
+    /// `≥ phi·n` (a genuine heavy hitter).
+    HeavyHitters {
+        items: Vec<u64>,
+        hitters: Vec<u64>,
+        phi: f64,
+    },
+    /// 5.5 Sublinear mean: checker recomputes the exact mean and verifies
+    /// `|estimate − mean| ≤ lambda`.
+    SublinearMean {
+        values: Vec<f64>,
+        estimate: f64,
+        lambda: f64,
+    },
 }
 
 impl Evidence {
@@ -610,6 +646,12 @@ impl Evidence {
             Evidence::DiffusionMap { .. }
             | Evidence::Isomap { .. }
             | Evidence::IntrinsicDim { .. } => CertClass::EpsApproximate,
+            // Batch 5: streaming sketches — all eps-approximate.
+            Evidence::StreamF2 { .. }
+            | Evidence::CountMinQuery { .. }
+            | Evidence::DistinctCount { .. }
+            | Evidence::HeavyHitters { .. }
+            | Evidence::SublinearMean { .. } => CertClass::EpsApproximate,
         }
     }
 }
