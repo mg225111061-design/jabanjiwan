@@ -175,6 +175,103 @@ impl NttCtx {
     }
 }
 
+/// Extended Euclid: returns `(g, x, y)` with `a*x + b*y = g = gcd(a,b)` (signed).
+/// Exact over i128 (R33). Used by CRT (general, modulus need not be prime).
+pub fn egcd(a: i128, b: i128) -> (i128, i128, i128) {
+    if b == 0 {
+        (a, 1, 0)
+    } else {
+        let (g, x, y) = egcd(b, a % b);
+        (g, y, x - (a / b) * y)
+    }
+}
+
+/// Modular inverse of `a` mod `m` (general `m`, via extended Euclid). `None` if not
+/// coprime. Exact.
+pub fn inv_mod(a: i128, m: i128) -> Option<i128> {
+    let (g, x, _) = egcd(a.rem_euclid(m), m);
+    if g != 1 {
+        return None;
+    }
+    Some(x.rem_euclid(m))
+}
+
+/// Chinese Remainder Theorem for two coprime moduli: find `x` in `[0, m1*m2)` with
+/// `x ≡ r1 (mod m1)` and `x ≡ r2 (mod m2)`. Returns `None` if `m1`, `m2` not coprime.
+/// Exact (R33). Used to cross-check NumericResidual replays under two moduli (E.4) and
+/// to reconstruct from residues.
+pub fn crt2(r1: u64, m1: u64, r2: u64, m2: u64) -> Option<u64> {
+    let (m1i, m2i) = (m1 as i128, m2 as i128);
+    let inv = inv_mod(m1i, m2i)?; // (m1)^{-1} mod m2
+    let diff = ((r2 as i128 - r1 as i128).rem_euclid(m2i) * inv).rem_euclid(m2i);
+    let x = r1 as i128 + m1i * diff;
+    Some(x.rem_euclid(m1i * m2i) as u64)
+}
+
+/// Montgomery modular multiplication for an *odd* modulus `q < 2^32` (PQC moduli
+/// q=3329 / 8380417 qualify; G.1). Exact: `from_mont(montmul(to_mont a, to_mont b))`
+/// equals `a*b mod q` — verified against standard `ModInt` multiplication in tests
+/// (AR-4 oracle). Montgomery avoids a per-multiply division, which is the constant-time
+/// representation real PQC implementations use (E.10).
+///
+/// Uses `R = 2^32`. All intermediates fit in u128.
+#[derive(Clone, Copy, Debug)]
+pub struct Montgomery {
+    pub q: u64,
+    qinv: u64,   // -q^{-1} mod 2^32
+    r2: u64,     // R^2 mod q, for to_mont
+}
+
+impl Montgomery {
+    const RBITS: u32 = 32;
+    const RMASK: u128 = (1u128 << 32) - 1;
+
+    /// Build a context for odd `q` with `1 < q < 2^32`. `None` otherwise (R38).
+    pub fn new(q: u64) -> Option<Self> {
+        if q <= 1 || q & 1 == 0 || q >= (1u64 << 32) {
+            return None;
+        }
+        // q^{-1} mod 2^32 by Hensel lifting (q is odd ⇒ invertible mod 2^k).
+        let mut inv: u64 = 1;
+        for _ in 0..5 {
+            // 1,2,4,8,16,32 bits of correctness
+            inv = inv.wrapping_mul(2u64.wrapping_sub(q.wrapping_mul(inv)));
+        }
+        inv &= (1u64 << 32) - 1;
+        let qinv = ((1u64 << 32) - inv) & ((1u64 << 32) - 1); // -q^{-1} mod 2^32
+        let r = 1u128 << 32;
+        let r2 = ((r % q as u128) * (r % q as u128) % q as u128) as u64;
+        Some(Montgomery { q, qinv, r2 })
+    }
+
+    /// REDC: given `t < q * R`, return `t * R^{-1} mod q` in `[0, q)`.
+    fn redc(&self, t: u128) -> u64 {
+        let m = ((t & Self::RMASK) * self.qinv as u128) & Self::RMASK;
+        let u = (t + m * self.q as u128) >> Self::RBITS;
+        let u = u as u64;
+        if u >= self.q {
+            u - self.q
+        } else {
+            u
+        }
+    }
+
+    /// Convert `a mod q` into Montgomery form `a*R mod q`.
+    pub fn to_mont(&self, a: u64) -> u64 {
+        self.redc((a % self.q) as u128 * self.r2 as u128)
+    }
+
+    /// Convert out of Montgomery form.
+    pub fn from_mont(&self, a: u64) -> u64 {
+        self.redc(a as u128)
+    }
+
+    /// Montgomery multiply two values already in Montgomery form.
+    pub fn mul(&self, a: u64, b: u64) -> u64 {
+        self.redc(a as u128 * b as u128)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +282,50 @@ mod tests {
         assert_eq!(a.pow(0).val, 1);
         let inv = a.inv().unwrap();
         assert_eq!((a * inv).val, 1);
+    }
+
+    #[test]
+    fn crt_known_answer_and_roundtrip() {
+        // x ≡ 2 (mod 3), x ≡ 3 (mod 5) ⇒ x = 8.
+        assert_eq!(crt2(2, 3, 3, 5), Some(8));
+        // non-coprime moduli ⇒ None.
+        assert_eq!(crt2(1, 4, 2, 6), None);
+        // reconstruct a value < m1*m2 from its residues (exact).
+        for x in [0u64, 1, 7, 1000, 3328] {
+            let r = crt2(x % 3329, 3329, x % 7681, 7681).unwrap();
+            assert_eq!(r % 3329, x % 3329);
+            assert_eq!(r % 7681, x % 7681);
+        }
+    }
+
+    #[test]
+    fn montgomery_matches_standard_mul_exactly() {
+        // AR-4: Montgomery is correct iff it equals the standard mod-mul oracle on all
+        // inputs (here exhaustively over a coprime grid for q=3329).
+        let q = 3329u64;
+        let mont = Montgomery::new(q).expect("odd q < 2^32");
+        // known answer: round-trip identity
+        for a in [0u64, 1, 2, 5, 3328] {
+            assert_eq!(mont.from_mont(mont.to_mont(a)), a % q, "roundtrip a={a}");
+        }
+        // exhaustive-ish equivalence to ModInt::mul
+        for a in (0..q).step_by(37) {
+            let am = mont.to_mont(a);
+            for b in (0..q).step_by(53) {
+                let bm = mont.to_mont(b);
+                let got = mont.from_mont(mont.mul(am, bm));
+                let want = (ModInt::new(a, q) * ModInt::new(b, q)).val;
+                assert_eq!(got, want, "montmul {a}*{b} mod {q}");
+            }
+        }
+    }
+
+    #[test]
+    fn montgomery_rejects_even_or_too_large_modulus() {
+        assert!(Montgomery::new(3328).is_none()); // even
+        assert!(Montgomery::new(1).is_none());
+        assert!(Montgomery::new(1u64 << 33).is_none()); // >= 2^32
+        assert!(Montgomery::new(8380417).is_some()); // ML-DSA prime, 23-bit, odd
     }
 
     #[test]

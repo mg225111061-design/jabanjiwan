@@ -209,6 +209,21 @@ impl ReplayChecker {
                     VerifyResult::Invalid
                 }
             }
+            ReplayKind::NegacyclicConvolution { a, b, q, claimed } => {
+                // Independent oracle (AR-4): the Θ(n²) schoolbook negacyclic product.
+                // Does not use the NTT, so a buggy/forged fast result is caught.
+                let n = a.len();
+                if n == 0 || b.len() != n || claimed.len() != n || *q <= 1 {
+                    return VerifyResult::Invalid;
+                }
+                let want = jeff_math::pqc::schoolbook_negacyclic(a, b, *q);
+                let got: Vec<u64> = claimed.iter().map(|&v| v % q).collect();
+                if got == want {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             ReplayKind::SampleAgreement { samples } => {
                 for s in samples {
                     let mut env: BTreeMap<String, BigRational> = BTreeMap::new();
@@ -659,6 +674,44 @@ mod tests {
             },
         };
         assert!(verify(cert(ev_bad)).is_none());
+    }
+
+    #[test]
+    fn replay_negacyclic_ntt_poly_mul() {
+        // PQC poly_mul a*b mod (x^4+1) over Z_7681, computed by the fast NTT, certified
+        // against the schoolbook oracle in the checker.
+        let q = 7681u64;
+        let a = vec![1u64, 2, 3, 4];
+        let b = vec![5u64, 6, 7, 8];
+        let claimed = jeff_math::pqc::negacyclic_convolve(&a, &b, q, 17).unwrap();
+        let ev = Evidence::NumericResidual {
+            replay: ReplayKind::NegacyclicConvolution {
+                a: a.clone(),
+                b: b.clone(),
+                q,
+                claimed,
+            },
+        };
+        assert!(verify(cert(ev)).is_some());
+    }
+
+    /// Tripwire `false_ntt_rejected`: a wrong NTT poly-mul result must NOT verify. The
+    /// checker recomputes the schoolbook negacyclic product independently (AR-4), so a
+    /// forged/incorrect fast result is caught → None → fallback (P0/P1).
+    #[test]
+    fn false_ntt_rejected() {
+        let q = 7681u64;
+        let a = vec![1u64, 2, 3, 4];
+        let b = vec![5u64, 6, 7, 8];
+        let mut claimed = jeff_math::pqc::negacyclic_convolve(&a, &b, q, 17).unwrap();
+        claimed[0] = (claimed[0] + 1) % q; // tamper one coefficient
+        let ev = Evidence::NumericResidual {
+            replay: ReplayKind::NegacyclicConvolution { a, b, q, claimed },
+        };
+        assert!(
+            verify(cert(ev)).is_none(),
+            "a tampered NTT result must be rejected by the schoolbook checker"
+        );
     }
 
     // ===== Verifier-integrity tripwires (MIDBUILD_AUDIT §A.1) =====

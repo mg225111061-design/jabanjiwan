@@ -3,9 +3,13 @@ name = "jeff-collapse-gf2"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-collapse-gf2 (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Layer 2: GF(2) folder (CLAUDE.md APPENDIX E.3 / 10.4). Partitions a bit-circuit into a maximal linear/affine region, accumulates (M,b), emits a Gf2LinearIdentity certificate, and defers at nonlinear gates with the `nonlinearity` barrier (correct for S-boxes, P.3)."
 
 [dependencies]
+jeff-math = { workspace = true }
+jeff-cert = { workspace = true }
+jeff-verify = { workspace = true }
+jeff-span = { workspace = true }
 
 [lints]
 workspace = true

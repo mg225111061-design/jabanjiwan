@@ -19,6 +19,7 @@ pub mod modular;
 pub mod nbody;
 pub mod ot;
 pub mod poly;
+pub mod pqc;
 pub mod ratfun;
 pub mod riccati;
 

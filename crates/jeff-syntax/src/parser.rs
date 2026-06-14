@@ -207,6 +207,9 @@ impl Parser {
         let mut attrs = Vec::new();
         while self.is_sym(Sym::At) {
             attrs.push(self.parse_attr());
+            // Attributes are conventionally written on their own line above the fn
+            // (APPENDIX I.4 / N.2); skip the intervening newline(s).
+            self.eat_newline();
         }
         if self.is_kw(Kw::Total) || self.is_kw(Kw::Fn) {
             return Some(Item::Fn(self.parse_fn(attrs)));

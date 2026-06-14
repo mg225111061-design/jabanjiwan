@@ -121,8 +121,24 @@ fn cmd_build(args: &[String]) -> ExitCode {
         }
     }
     if opts.const_time_audit {
-        // Stage 0: no secret[T] functions exist yet (secret-taint is Stage 5).
-        println!("const-time-audit: OK (no secret[T] paths in this module)");
+        // R6: audit secret[T] paths (jeff-types). FAIL is a hard error (CI gate).
+        match jeffc::const_time_audit(&src) {
+            Ok((report, all_ok)) => {
+                if report.is_empty() {
+                    println!("const-time-audit: OK (no secret[T] paths in this module)");
+                } else {
+                    print!("{report}");
+                    if !all_ok {
+                        eprintln!("const-time-audit: FAIL (R6: secret-dependent branch/index)");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+            Err(ds) => {
+                print_diags(&ds);
+                return ExitCode::FAILURE;
+            }
+        }
     }
     if !opts.collapse_report && !opts.emit_llvm && opts.emit_certificates.is_none() {
         println!("built {} function(s)", art.funcs.len());

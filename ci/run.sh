@@ -2,7 +2,7 @@
 # CLAUDE.md PART 15 / APPENDIX K.2 — all gates must be green to merge (R13).
 #
 # Active gate subset: build, clippy -D warnings, test, license_scan, determinism,
-# determinism. Also runs cert_replay (R25) and bench_honesty (R8), which already pass.
+# cert_replay (R25), const_time_audit (R6), bench_honesty (R8).
 # (Coverage R26 is added when cargo-llvm-cov is available; noted, not faked.)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -24,6 +24,9 @@ echo "== determinism (R11) =="
 
 echo "== cert-replay (R25) =="
 ./ci/cert_replay.sh
+
+echo "== const-time-audit (R6) =="
+./ci/const_time_audit.sh
 
 echo "== bench-honesty (R8) =="
 ./ci/bench_honesty.sh

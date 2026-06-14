@@ -125,6 +125,77 @@ impl Gf2Matrix {
         let cols = other.cols.iter().map(|c| self.mat_vec(c)).collect();
         Gf2Matrix::from_columns(self.rows, cols)
     }
+
+    /// The i-th row of `self` as a `cols_n`-bit vector.
+    fn row(&self, i: usize) -> Gf2Vec {
+        let mut r = Gf2Vec::zeros(self.cols_n);
+        for (j, col) in self.cols.iter().enumerate() {
+            r.set(j, col.get(i));
+        }
+        r
+    }
+
+    /// Boolean matrix product `self · other` over GF(2) via the **Method of Four
+    /// Russians** (M4RM), clean-room (CLAUDE.md R5 / D8 — links no M4RI). Result is
+    /// identical to [`mat_mat`]; this is the table-accelerated path (APPENDIX E.3).
+    ///
+    /// Idea: process `self` in vertical stripes of `k = ⌊log₂ p⌋` columns. For each
+    /// stripe, precompute a table `T[s]` = XOR of the `other`-rows selected by the bits
+    /// of `s` (all `2ᵏ` subsets), each entry built from the one with its lowest bit
+    /// removed in a **single** row-XOR (the Gray-code/Four-Russians recurrence). Then
+    /// every output row is one table lookup per stripe instead of `k` row-adds.
+    pub fn mat_mat_m4rm(&self, other: &Gf2Matrix) -> Gf2Matrix {
+        debug_assert_eq!(self.cols_n, other.rows);
+        let m = self.rows;
+        let p = self.cols_n;
+        let n = other.cols_n;
+        if p == 0 {
+            return Gf2Matrix::zeros(m, n);
+        }
+        // precompute other's rows as length-n vectors (word-parallel XOR units).
+        let brows: Vec<Gf2Vec> = (0..p).map(|r| other.row(r)).collect();
+        // stripe width k (≥1); ⌊log2 p⌋ keeps the table size O(p).
+        let k = (usize::BITS - 1 - (p as u32).leading_zeros()).max(1) as usize;
+
+        let mut crows: Vec<Gf2Vec> = (0..m).map(|_| Gf2Vec::zeros(n)).collect();
+        let arows: Vec<Gf2Vec> = (0..m).map(|i| self.row(i)).collect();
+
+        let mut base = 0usize;
+        while base < p {
+            let width = k.min(p - base);
+            let size = 1usize << width;
+            // table[s] = XOR of brows[base + bit] for bits set in s.
+            let mut table: Vec<Gf2Vec> = Vec::with_capacity(size);
+            table.push(Gf2Vec::zeros(n)); // s = 0
+            for s in 1..size {
+                let low = s.trailing_zeros() as usize;
+                let prev = s & !(1 << low);
+                table.push(table[prev].xor(&brows[base + low]));
+            }
+            // each output row gets one lookup for this stripe.
+            for (i, arow) in arows.iter().enumerate() {
+                let mut idx = 0usize;
+                for bit in 0..width {
+                    if arow.get(base + bit) {
+                        idx |= 1 << bit;
+                    }
+                }
+                if idx != 0 {
+                    crows[i] = crows[i].xor(&table[idx]);
+                }
+            }
+            base += width;
+        }
+
+        // assemble column-major result from the computed rows.
+        let mut cols = vec![Gf2Vec::zeros(m); n];
+        for (i, crow) in crows.iter().enumerate() {
+            for (j, col) in cols.iter_mut().enumerate() {
+                col.set(i, crow.get(j));
+            }
+        }
+        Gf2Matrix::from_columns(m, cols)
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +210,40 @@ mod tests {
         x.set(0, true);
         x.set(2, true);
         assert_eq!(m.mat_vec(&x), x);
+    }
+
+    #[test]
+    fn four_russians_matches_naive_matmul() {
+        // AR-4 / R5: clean-room Four-Russians must equal the naive product exactly,
+        // over a range of shapes (including p where k = ⌊log2 p⌋ varies).
+        let mk = |rows: usize, cols: usize, seed: u64| {
+            let mut s = seed;
+            let mut next = || {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                s
+            };
+            let columns: Vec<Gf2Vec> = (0..cols)
+                .map(|_| {
+                    let mut v = Gf2Vec::zeros(rows);
+                    for i in 0..rows {
+                        v.set(i, next() & 1 == 1);
+                    }
+                    v
+                })
+                .collect();
+            Gf2Matrix::from_columns(rows, columns)
+        };
+        for &(m, p, n) in &[(1usize, 1usize, 1usize), (4, 4, 4), (5, 8, 3), (9, 16, 7), (16, 16, 16)] {
+            let a = mk(m, p, 0x1234 + m as u64);
+            let b = mk(p, n, 0xABCD + n as u64);
+            assert_eq!(
+                a.mat_mat_m4rm(&b),
+                a.mat_mat(&b),
+                "M4RM != naive for {m}x{p} * {p}x{n}"
+            );
+        }
     }
 
     #[test]

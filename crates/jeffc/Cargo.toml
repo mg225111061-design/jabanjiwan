@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 jeff-span = { workspace = true }
 jeff-syntax = { workspace = true }
+jeff-types = { workspace = true }
 jeff-core-ir = { workspace = true }
 jeff-recognizer = { workspace = true }
 jeff-collapse-arith = { workspace = true }

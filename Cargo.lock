@@ -201,6 +201,12 @@ dependencies = [
 [[package]]
 name = "jeff-collapse-gf2"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-math",
+ "jeff-span",
+ "jeff-verify",
+]
 
 [[package]]
 name = "jeff-collapse-holographic"
@@ -279,6 +285,10 @@ version = "0.1.0"
 [[package]]
 name = "jeff-types"
 version = "0.1.0"
+dependencies = [
+ "jeff-span",
+ "jeff-syntax",
+]
 
 [[package]]
 name = "jeff-verify"
@@ -305,6 +315,7 @@ dependencies = [
  "jeff-recognizer",
  "jeff-span",
  "jeff-syntax",
+ "jeff-types",
  "jeff-verify",
  "num-bigint",
  "serde_json",

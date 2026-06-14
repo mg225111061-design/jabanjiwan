@@ -3,9 +3,11 @@ name = "jeff-types"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-types (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Type-system checks. Stage 5 ships the secret-taint constant-time audit (CLAUDE.md PART 7.4 / APPENDIX C.4, R6/R28/R29): rejects data-dependent branch/index on secret[T]. Sound, not complete."
 
 [dependencies]
+jeff-syntax = { workspace = true }
+jeff-span = { workspace = true }
 
 [lints]
 workspace = true

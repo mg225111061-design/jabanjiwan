@@ -70,6 +70,14 @@ impl Artifact {
 /// (R20); never panics on user input (R38).
 pub fn compile(src: &str, opts: &Options) -> Result<Artifact, Vec<Diagnostic>> {
     let program = jeff_syntax::parse(src, 0)?;
+    // R6: secret-taint is a *type rule*, not opt-in. A data-dependent branch/index on a
+    // secret[T] value is a compile error regardless of `@constant_time` (PART 7.4, C.4).
+    // We surface these before lowering so security errors are reported even for functions
+    // that use constructs outside the executable core subset.
+    let taint_diags = jeff_types::check_secret_taint(&program);
+    if taint_diags.iter().any(Diagnostic::is_error) {
+        return Err(taint_diags);
+    }
     let ir = lower(&program)?;
     let budget = SaturationBudget::default();
     let mut funcs = Vec::new();
@@ -238,6 +246,46 @@ pub fn collapse_report(art: &Artifact) -> String {
         out.push('\n');
     }
     out
+}
+
+/// `--const-time-audit` report (APPENDIX H.4). For every function with `secret[T]`
+/// inputs, report OK or FAIL with the secret-taint diagnostics. The audit is sound,
+/// not complete (jeff-types): FAIL means a secret may reach a branch/index; OK means
+/// no such flow at the source/IR level (see jeff-types for the leakage model — what
+/// this does and does not cover). Returns the report and whether all functions passed.
+pub fn const_time_audit(src: &str) -> Result<(String, bool), Vec<Diagnostic>> {
+    let program = jeff_syntax::parse(src, 0)?;
+    let mut out = String::new();
+    let mut all_ok = true;
+    for item in &program.items {
+        let jeff_syntax::ast::Item::Fn(f) = item else {
+            continue;
+        };
+        if !jeff_types::has_secret_inputs(f) {
+            continue;
+        }
+        let diags = jeff_types::audit_fn(f);
+        let ct = if jeff_types::is_constant_time(f) {
+            "@constant_time "
+        } else {
+            ""
+        };
+        if diags.is_empty() {
+            out.push_str(&format!(
+                "fn {:<16} OK    {}no secret-dependent branch/index (source/IR model)\n",
+                f.name, ct
+            ));
+        } else {
+            all_ok = false;
+            let detail = diags
+                .iter()
+                .map(|d| format!("{} at {}", d.code.as_str(), d.span))
+                .collect::<Vec<_>>()
+                .join("; ");
+            out.push_str(&format!("fn {:<16} FAIL  {}{}\n", f.name, ct, detail));
+        }
+    }
+    Ok((out, all_ok))
 }
 
 /// Machine-readable collapse report (APPENDIX H.2 JSON).

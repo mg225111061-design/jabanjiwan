@@ -116,6 +116,16 @@ pub enum ReplayKind {
         n: usize,
         claimed: Vec<u64>,
     },
+    /// Exact **negacyclic** convolution `a*b mod (x^n + 1)` over `Z_q` — the lattice
+    /// PQC poly_mul (ML-KEM / ML-DSA). The collapser computes `claimed` via the fast
+    /// NTT (jeff-math::pqc); the checker recomputes the Θ(n²) schoolbook definition
+    /// independently and confirms equality (AR-4 oracle, exact mod q — no float).
+    NegacyclicConvolution {
+        a: Vec<u64>,
+        b: Vec<u64>,
+        q: u64,
+        claimed: Vec<u64>,
+    },
     /// Finite sample agreement: closed form evaluated at given inputs must equal
     /// the listed expected values (Barvinok chamber sampling, APPENDIX F.4).
     SampleAgreement { samples: Vec<SamplePoint> },

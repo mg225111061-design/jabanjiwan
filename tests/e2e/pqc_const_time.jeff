@@ -1,0 +1,11 @@
+# PQC constant-time fixture (CLAUDE.md R6/R28, D.5 P01-style core).
+# Data-oblivious arithmetic on secret values: passes the const-time audit.
+# (A secret-dependent branch/index here would be a compile error, E0301/E0302.)
+
+@constant_time
+fn ct_add(a: secret[mod[3329]], b: secret[mod[3329]]) -> secret[mod[3329]]:
+    a + b
+
+@constant_time
+fn ct_madd(a: secret[mod[3329]], b: secret[mod[3329]], c: secret[mod[3329]]) -> secret[mod[3329]]:
+    a * b + c
