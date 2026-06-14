@@ -83,6 +83,177 @@ impl FMat {
     fn col(&self, j: usize) -> Vec<f64> {
         (0..self.rows).map(|i| self.get(i, j)).collect()
     }
+
+    pub fn identity(n: usize) -> FMat {
+        let mut m = FMat::zeros(n, n);
+        for i in 0..n {
+            m.set(i, i, 1.0);
+        }
+        m
+    }
+
+    pub fn add(&self, b: &FMat) -> FMat {
+        FMat {
+            rows: self.rows,
+            cols: self.cols,
+            data: self.data.iter().zip(&b.data).map(|(x, y)| x + y).collect(),
+        }
+    }
+    pub fn scale(&self, s: f64) -> FMat {
+        FMat {
+            rows: self.rows,
+            cols: self.cols,
+            data: self.data.iter().map(|x| x * s).collect(),
+        }
+    }
+
+    /// f64 inverse via Gauss–Jordan with partial pivoting. `None` if (near-)singular.
+    pub fn inverse(&self) -> Option<FMat> {
+        let n = self.rows;
+        if n != self.cols {
+            return None;
+        }
+        let mut a = self.data.clone();
+        let mut inv = FMat::identity(n).data;
+        let idx = |i: usize, j: usize| i * n + j;
+        for col in 0..n {
+            // partial pivot: largest |a[r][col]|
+            let mut piv = col;
+            let mut best = a[idx(col, col)].abs();
+            for r in (col + 1)..n {
+                let v = a[idx(r, col)].abs();
+                if v > best {
+                    best = v;
+                    piv = r;
+                }
+            }
+            if best < 1e-300 {
+                return None;
+            }
+            if piv != col {
+                for k in 0..n {
+                    a.swap(idx(col, k), idx(piv, k));
+                    inv.swap(idx(col, k), idx(piv, k));
+                }
+            }
+            let p = a[idx(col, col)];
+            for k in 0..n {
+                a[idx(col, k)] /= p;
+                inv[idx(col, k)] /= p;
+            }
+            for r in 0..n {
+                if r == col {
+                    continue;
+                }
+                let f = a[idx(r, col)];
+                if f == 0.0 {
+                    continue;
+                }
+                for k in 0..n {
+                    a[idx(r, k)] -= f * a[idx(col, k)];
+                    inv[idx(r, k)] -= f * inv[idx(col, k)];
+                }
+            }
+        }
+        Some(FMat { rows: n, cols: n, data: inv })
+    }
+
+    pub fn is_symmetric(&self, tol: f64) -> bool {
+        if self.rows != self.cols {
+            return false;
+        }
+        let n = self.rows;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if (self.get(i, j) - self.get(j, i)).abs() > tol {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// LDLᵀ diagonal `D` (sqrt-free Cholesky), or `None` on a near-zero pivot.
+    /// `A` is PSD iff all `D[i] ≥ −tol`; positive-definite iff all `D[i] > tol`.
+    pub fn ldlt_diag(&self) -> Option<Vec<f64>> {
+        let n = self.rows;
+        if n != self.cols {
+            return None;
+        }
+        let mut l = FMat::identity(n);
+        let mut d = vec![0.0; n];
+        for j in 0..n {
+            let mut dj = self.get(j, j);
+            for (k, &dk) in d.iter().enumerate().take(j) {
+                dj -= l.get(j, k) * l.get(j, k) * dk;
+            }
+            if dj.abs() < 1e-300 {
+                return None;
+            }
+            d[j] = dj;
+            for i in (j + 1)..n {
+                let mut s = self.get(i, j);
+                for (k, &dk) in d.iter().enumerate().take(j) {
+                    s -= l.get(i, k) * l.get(j, k) * dk;
+                }
+                l.set(i, j, s / dj);
+            }
+        }
+        Some(d)
+    }
+}
+
+/// Solve a dense `A x = b` in f64 via Gauss elimination with partial pivoting.
+/// `None` if (near-)singular. (Used for the Lyapunov Kronecker system.)
+pub fn solve_dense(a: &FMat, b: &[f64]) -> Option<Vec<f64>> {
+    let n = a.rows;
+    if a.cols != n || b.len() != n {
+        return None;
+    }
+    let mut m = a.data.clone();
+    let mut rhs = b.to_vec();
+    let idx = |i: usize, j: usize| i * n + j;
+    for col in 0..n {
+        let mut piv = col;
+        let mut best = m[idx(col, col)].abs();
+        for r in (col + 1)..n {
+            let v = m[idx(r, col)].abs();
+            if v > best {
+                best = v;
+                piv = r;
+            }
+        }
+        if best < 1e-300 {
+            return None;
+        }
+        if piv != col {
+            for k in 0..n {
+                m.swap(idx(col, k), idx(piv, k));
+            }
+            rhs.swap(col, piv);
+        }
+        let p = m[idx(col, col)];
+        for r in (col + 1)..n {
+            let f = m[idx(r, col)] / p;
+            if f == 0.0 {
+                continue;
+            }
+            for k in col..n {
+                m[idx(r, k)] -= f * m[idx(col, k)];
+            }
+            rhs[r] -= f * rhs[col];
+        }
+    }
+    // back-substitution
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let mut s = rhs[i];
+        for j in (i + 1)..n {
+            s -= m[idx(i, j)] * x[j];
+        }
+        x[i] = s / m[idx(i, i)];
+    }
+    Some(x)
 }
 
 /// Deterministic splitmix64 PRNG with a standard-normal generator (Box–Muller).

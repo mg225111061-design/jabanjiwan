@@ -381,6 +381,73 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+            Evidence::SinkhornPlan {
+                cost,
+                a,
+                b,
+                eps,
+                f,
+                g,
+                tol,
+            } => {
+                let m = a.len();
+                let n = b.len();
+                if cost.len() != m * n || f.len() != m || g.len() != n || !tol_ok(*tol) || *eps <= 0.0
+                {
+                    return VerifyResult::Invalid;
+                }
+                let plan = jeff_math::ot::plan_from_potentials(cost, f, g, *eps, m, n);
+                if !plan.iter().all(|x| x.is_finite()) {
+                    return VerifyResult::Invalid; // underflow/overflow → not a valid plan
+                }
+                if jeff_math::ot::marginal_residual(&plan, a, b, m, n) <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::AreStabilizing {
+                a,
+                b,
+                q,
+                r,
+                x,
+                n,
+                m,
+                tol,
+            } => {
+                use jeff_math::fmat::FMat;
+                let (nn, mm) = (*n, *m);
+                if a.len() != nn * nn
+                    || q.len() != nn * nn
+                    || x.len() != nn * nn
+                    || b.len() != nn * mm
+                    || r.len() != mm * mm
+                    || !tol_ok(*tol)
+                {
+                    return VerifyResult::Invalid;
+                }
+                let am = FMat::from_data(nn, nn, a.clone());
+                let bm = FMat::from_data(nn, mm, b.clone());
+                let qm = FMat::from_data(nn, nn, q.clone());
+                let rm = FMat::from_data(mm, mm, r.clone());
+                let xm = FMat::from_data(nn, nn, x.clone());
+                // (1) residual ≤ tol, (2) X PSD, (3) closed loop Hurwitz — all required.
+                let Some(res) = jeff_math::riccati::care_residual(&am, &bm, &qm, &rm, &xm) else {
+                    return VerifyResult::Invalid;
+                };
+                if res > *tol || !jeff_math::riccati::is_psd(&xm, *tol) {
+                    return VerifyResult::Invalid;
+                }
+                let Some(acl) = jeff_math::riccati::closed_loop(&am, &bm, &rm, &xm) else {
+                    return VerifyResult::Invalid;
+                };
+                if jeff_math::riccati::is_hurwitz(&acl) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -411,7 +478,9 @@ impl Checker for DefaultRegistry {
             | Evidence::FloatResidual { .. }
             | Evidence::LowRankResidual { .. }
             | Evidence::FmmResidual { .. }
-            | Evidence::LinSolveResidual { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::LinSolveResidual { .. }
+            | Evidence::SinkhornPlan { .. }
+            | Evidence::AreStabilizing { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -434,6 +503,8 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::LowRankResidual { .. } => "frobenius-residual-tol",
         Evidence::FmmResidual { .. } => "nbody-residual-tol",
         Evidence::LinSolveResidual { .. } => "l2-residual-tol",
+        Evidence::SinkhornPlan { .. } => "sinkhorn-marginal-tol",
+        Evidence::AreStabilizing { .. } => "care-stabilizing-psd",
     }
 }
 
@@ -872,6 +943,60 @@ mod tests {
         .is_none());
     }
 
+    /// CARE: a non-stabilizing solution (residual small but wrong invariant subspace)
+    /// must be rejected — the cert requires PSD + Hurwitz, not just residual.
+    #[test]
+    fn non_stabilizing_care_rejected() {
+        use jeff_math::fmat::FMat;
+        // Scalar CARE A=0,B=1,Q=1,R=1: X²=1. X=1 stabilizing (accept); X=-1 anti-
+        // stabilizing — same |residual| (0) but closed loop +1 (unstable) → reject.
+        let mk = |x: f64| Evidence::AreStabilizing {
+            a: vec![0.0],
+            b: vec![1.0],
+            q: vec![1.0],
+            r: vec![1.0],
+            x: vec![x],
+            n: 1,
+            m: 1,
+            tol: 1e-9,
+        };
+        assert!(verify(cert(mk(1.0))).is_some(), "stabilizing X=1 accepted");
+        assert!(verify(cert(mk(-1.0))).is_none(), "anti-stabilizing X=-1 rejected");
+        let _ = FMat::identity(1);
+    }
+
+    /// Sinkhorn: a plan whose marginals miss the target is rejected; the obligation
+    /// records the entropic regularization (not exact Wasserstein).
+    #[test]
+    fn false_sinkhorn_marginals_rejected() {
+        use jeff_math::ot::sinkhorn_log;
+        let cost = vec![0.0, 1.0, 1.0, 0.0];
+        let a = vec![0.5, 0.5];
+        let b = vec![0.5, 0.5];
+        let (f, g) = sinkhorn_log(&cost, &a, &b, 0.1, 500);
+        assert!(verify(cert(Evidence::SinkhornPlan {
+            cost: cost.clone(),
+            a: a.clone(),
+            b: b.clone(),
+            eps: 0.1,
+            f,
+            g,
+            tol: 1e-4,
+        }))
+        .is_some());
+        // zero potentials → plan all ones → marginals = 2 ≠ 0.5 → reject.
+        assert!(verify(cert(Evidence::SinkhornPlan {
+            cost,
+            a,
+            b,
+            eps: 0.1,
+            f: vec![0.0, 0.0],
+            g: vec![0.0, 0.0],
+            tol: 1e-4,
+        }))
+        .is_none());
+    }
+
     /// Tier-A residual certificates serialize → deserialize → re-verify (R25).
     #[test]
     fn tier_a_certs_round_trip() {
@@ -899,6 +1024,23 @@ mod tests {
                 dim: 2,
                 b: vec![2.0, 4.0],
                 x: vec![1.0, 2.0],
+                tol: 1e-9,
+            },
+            {
+                let cost = vec![0.0, 1.0, 1.0, 0.0];
+                let a = vec![0.5, 0.5];
+                let b = vec![0.5, 0.5];
+                let (f, g) = jeff_math::ot::sinkhorn_log(&cost, &a, &b, 0.1, 400);
+                Evidence::SinkhornPlan { cost, a, b, eps: 0.1, f, g, tol: 1e-4 }
+            },
+            Evidence::AreStabilizing {
+                a: vec![0.0],
+                b: vec![1.0],
+                q: vec![1.0],
+                r: vec![1.0],
+                x: vec![1.0],
+                n: 1,
+                m: 1,
                 tol: 1e-9,
             },
         ];

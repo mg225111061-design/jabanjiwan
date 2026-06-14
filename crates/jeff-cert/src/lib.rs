@@ -239,6 +239,34 @@ pub enum Evidence {
         x: Vec<f64>,
         tol: f64,
     },
+    /// Sinkhorn (entropic OT): certifies the **regularized** plan's marginal
+    /// feasibility `‖P𝟙−a‖₁ + ‖Pᵀ𝟙−b‖₁ ≤ tol` for the Gibbs-form plan
+    /// `P_ij = exp((f_i+g_j−C_ij)/eps)`. This is NOT exact (ε→0) Wasserstein — the
+    /// obligation states the regularization `eps`. The checker reconstructs `P` from
+    /// the dual potentials and recomputes the marginals.
+    SinkhornPlan {
+        cost: Vec<f64>,
+        a: Vec<f64>,
+        b: Vec<f64>,
+        eps: f64,
+        f: Vec<f64>,
+        g: Vec<f64>,
+        tol: f64,
+    },
+    /// CARE stabilizing solution: certifies `‖AᵀX+XA−XBR⁻¹BᵀX+Q‖_F ≤ tol` AND `X`
+    /// PSD AND the closed loop `A−BR⁻¹BᵀX` Hurwitz. The residual alone is insufficient
+    /// (CARE has many solutions); all three are checked, else the collapser refuses.
+    /// `a,q,x` are `n×n`, `b` is `n×m`, `r` is `m×m` (row-major).
+    AreStabilizing {
+        a: Vec<f64>,
+        b: Vec<f64>,
+        q: Vec<f64>,
+        r: Vec<f64>,
+        x: Vec<f64>,
+        n: usize,
+        m: usize,
+        tol: f64,
+    },
 }
 
 /// A small captured GF(2) linear circuit so the GF(2) certificate is self-contained

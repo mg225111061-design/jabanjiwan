@@ -16,8 +16,10 @@ pub mod linsolve;
 pub mod matrix;
 pub mod modular;
 pub mod nbody;
+pub mod ot;
 pub mod poly;
 pub mod ratfun;
+pub mod riccati;
 
 pub use gf2::{Gf2Matrix, Gf2Vec};
 pub use hyper::{HyperTerm, LinForm};

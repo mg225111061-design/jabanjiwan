@@ -37,6 +37,8 @@ pub enum KernelResult {
     LowRank(FMat),
     Potentials(Vec<f64>),
     Solution(Vec<f64>),
+    Transport(Vec<f64>),
+    Care(FMat),
 }
 
 /// A kernel collapse attempt: the gated outcome plus the computed result.
@@ -327,6 +329,118 @@ pub fn krylov_collapse(a: &Sparse, b: &[f64], tol: f64, max_iter: usize) -> Kern
     collapsed(cert, KernelResult::Solution(x))
 }
 
+/// Sinkhorn entropic-OT collapse. Refuses if marginals are non-positive or have
+/// unequal total mass (infeasible). On convergence (marginal residual ≤ tol),
+/// certifies the regularized plan — the obligation states it is entropic OT at the
+/// given `eps`, NOT exact Wasserstein.
+pub fn sinkhorn_collapse(
+    cost: &[f64],
+    a: &[f64],
+    b: &[f64],
+    eps: f64,
+    max_iter: usize,
+    tol: f64,
+) -> KernelOutcome {
+    let (m, n) = (a.len(), b.len());
+    if cost.len() != m * n || eps <= 0.0 {
+        return defer(BarrierTag::ConstantFactorOnly, "malformed OT instance or eps<=0");
+    }
+    if a.iter().any(|&x| x <= 0.0) || b.iter().any(|&x| x <= 0.0) {
+        return defer(BarrierTag::ConstantFactorOnly, "marginals must be strictly positive");
+    }
+    let (sa, sb): (f64, f64) = (a.iter().sum(), b.iter().sum());
+    if (sa - sb).abs() > 1e-9 {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            "marginals have unequal total mass; OT is infeasible (refused)",
+        );
+    }
+    let (f, g) = jeff_math::ot::sinkhorn_log(cost, a, b, eps, max_iter);
+    let plan = jeff_math::ot::plan_from_potentials(cost, &f, &g, eps, m, n);
+    let residual = jeff_math::ot::marginal_residual(&plan, a, b, m, n);
+    if !plan.iter().all(|x| x.is_finite()) || residual > tol {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            &format!("Sinkhorn did not reach marginal tol ({residual:.3e} > {tol:.3e}); raise eps or iters"),
+        );
+    }
+    let cert = Certificate {
+        collapser_id: "kernel/sinkhorn".into(),
+        source: node(),
+        collapsed: IrRef::new(2, Span::dummy()),
+        obligation: Obligation::new(format!(
+            "ENTROPIC OT (eps={eps:.3e}), NOT exact Wasserstein: certifies \
+             ‖P𝟙−a‖₁+‖Pᵀ𝟙−b‖₁ ≤ {tol:.3e} for the Gibbs-form plan"
+        )),
+        evidence: Evidence::SinkhornPlan {
+            cost: cost.to_vec(),
+            a: a.to_vec(),
+            b: b.to_vec(),
+            eps,
+            f,
+            g,
+            tol,
+        },
+        boundaries: vec![Boundary::new(format!("regularization eps={eps:.3e}; smaller eps ⇒ slower/less stable"))],
+        fallback: node(),
+    };
+    collapsed(cert, KernelResult::Transport(plan))
+}
+
+/// CARE/LQR collapse via matrix-sign. Certifies a candidate `X` only if it is the
+/// stabilizing PSD solution (residual + PSD + Hurwitz); otherwise **refuses** — a
+/// small residual alone is not accepted (CARE has many solutions), and a missing
+/// stabilizing solution (non-stabilizable/detectable) is refused (P0).
+pub fn riccati_collapse(
+    a: &FMat,
+    b: &FMat,
+    q: &FMat,
+    r: &FMat,
+    iters: usize,
+    tol: f64,
+) -> KernelOutcome {
+    let n = a.rows;
+    let m = b.cols;
+    let Some(x) = jeff_math::riccati::solve_care(a, b, q, r, iters) else {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            "matrix-sign iteration broke down; no stabilizing CARE solution found (refused)",
+        );
+    };
+    let cert = Certificate {
+        collapser_id: "kernel/riccati".into(),
+        source: node(),
+        collapsed: IrRef::new(2, Span::dummy()),
+        obligation: Obligation::new(format!(
+            "‖AᵀX+XA−XBR⁻¹BᵀX+Q‖_F ≤ {tol:.3e} AND X⪰0 AND (A−BR⁻¹BᵀX) Hurwitz \
+             (stabilizing solution; residual alone is insufficient)"
+        )),
+        evidence: Evidence::AreStabilizing {
+            a: a.data.clone(),
+            b: b.data.clone(),
+            q: q.data.clone(),
+            r: r.data.clone(),
+            x: x.data.clone(),
+            n,
+            m,
+            tol,
+        },
+        boundaries: vec![Boundary::new("stabilizable (A,B) & detectable (A,Q): a valid stabilizing X exists")],
+        fallback: node(),
+    };
+    // verify enforces residual+PSD+Hurwitz; if any fails the result is refused.
+    match jeff_verify::verify(cert) {
+        Some(vc) => KernelOutcome {
+            outcome: CollapseOutcome::Collapsed(Collapsed::new(node(), vc)),
+            result: Some(KernelResult::Care(x)),
+        },
+        None => defer(
+            BarrierTag::ConstantFactorOnly,
+            "candidate X is not the stabilizing PSD solution (residual/PSD/Hurwitz check failed); refused",
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,6 +548,33 @@ mod tests {
             ),
             "oscillatory kernel demotes"
         );
+    }
+
+    #[test]
+    fn sinkhorn_collapses_feasible_refuses_mass_mismatch() {
+        let cost = vec![0.0, 1.0, 1.0, 0.0];
+        let a = vec![0.5, 0.5];
+        let b = vec![0.5, 0.5];
+        assert!(matches!(
+            sinkhorn_collapse(&cost, &a, &b, 0.1, 500, 1e-6).outcome,
+            CollapseOutcome::Collapsed(_)
+        ));
+        // unequal total mass → infeasible → refuse.
+        let b_bad = vec![0.5, 0.9];
+        assert!(matches!(
+            sinkhorn_collapse(&cost, &a, &b_bad, 0.1, 500, 1e-6).outcome,
+            CollapseOutcome::Defer(_)
+        ));
+    }
+
+    #[test]
+    fn riccati_collapses_stabilizing() {
+        let a = FMat::from_data(2, 2, vec![0.0, 1.0, 0.0, 0.0]);
+        let b = FMat::from_data(2, 1, vec![0.0, 1.0]);
+        let q = FMat::identity(2);
+        let r = FMat::from_data(1, 1, vec![1.0]);
+        let out = riccati_collapse(&a, &b, &q, &r, 80, 1e-6);
+        assert!(matches!(out.outcome, CollapseOutcome::Collapsed(_)), "LQR CARE collapses");
     }
 
     #[test]
