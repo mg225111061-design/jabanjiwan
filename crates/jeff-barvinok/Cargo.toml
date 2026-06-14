@@ -3,9 +3,17 @@ name = "jeff-barvinok"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-barvinok (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Layer 3b: exact lattice-point counting (Ehrhart/Barvinok). Clean-room, links no GPL barvinok/LattE/PPL and not isl (CLAUDE.md 10.3, R5). Counts affine polytopes; defers non-affine and high/variable dimension."
 
 [dependencies]
+jeff-math = { workspace = true }
+jeff-cert = { workspace = true }
+jeff-verify = { workspace = true }
+jeff-syntax = { workspace = true }
+jeff-span = { workspace = true }
+
+[dev-dependencies]
+num-bigint = { workspace = true }
 
 [lints]
 workspace = true

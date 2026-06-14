@@ -267,6 +267,19 @@ pub enum Evidence {
         m: usize,
         tol: f64,
     },
+
+    // ---- Stage 4 Barvinok/Ehrhart lattice counting (exact, no tol) ----
+    /// Exact lattice-point count: the Ehrhart quasi-polynomial `qp` equals the true
+    /// count for the parametric polytope `cs`. Checked à la APPENDIX F.4 — the
+    /// residue classes partition the parameter line (`qp.period`), and at every
+    /// sampled `n ∈ [n_lo, n_hi]` the checker's **exact brute-force enumeration**
+    /// equals `qp.eval(n)`. Integers only — no tolerance.
+    LatticeCount {
+        cs: jeff_math::lattice::ConstraintSystem,
+        qp: jeff_math::lattice::QuasiPoly,
+        n_lo: i64,
+        n_hi: i64,
+    },
 }
 
 /// A small captured GF(2) linear circuit so the GF(2) certificate is self-contained

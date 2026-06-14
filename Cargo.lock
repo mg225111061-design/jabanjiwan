@@ -148,6 +148,14 @@ version = "0.1.0"
 [[package]]
 name = "jeff-barvinok"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-math",
+ "jeff-span",
+ "jeff-syntax",
+ "jeff-verify",
+ "num-bigint",
+]
 
 [[package]]
 name = "jeff-cert"

@@ -12,6 +12,7 @@
 pub mod fmat;
 pub mod gf2;
 pub mod hyper;
+pub mod lattice;
 pub mod linsolve;
 pub mod matrix;
 pub mod modular;

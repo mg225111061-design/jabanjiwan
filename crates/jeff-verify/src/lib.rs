@@ -448,6 +448,24 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+            Evidence::LatticeCount { cs, qp, n_lo, n_hi } => {
+                // coverage: residue classes 0..period partition the parameter line.
+                if qp.period < 1 || qp.polys.len() != qp.period as usize || n_hi < n_lo {
+                    return VerifyResult::Invalid;
+                }
+                // F.4 sample enumeration: exact brute force must equal qp.eval(n).
+                for n in *n_lo..=*n_hi {
+                    match cs.count(n) {
+                        Some(c) => {
+                            if c != qp.eval(n) {
+                                return VerifyResult::Invalid;
+                            }
+                        }
+                        None => return VerifyResult::Unknown, // unbounded/over-cap → fallback
+                    }
+                }
+                VerifyResult::Valid
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -480,7 +498,8 @@ impl Checker for DefaultRegistry {
             | Evidence::FmmResidual { .. }
             | Evidence::LinSolveResidual { .. }
             | Evidence::SinkhornPlan { .. }
-            | Evidence::AreStabilizing { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::AreStabilizing { .. }
+            | Evidence::LatticeCount { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -505,6 +524,7 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::LinSolveResidual { .. } => "l2-residual-tol",
         Evidence::SinkhornPlan { .. } => "sinkhorn-marginal-tol",
         Evidence::AreStabilizing { .. } => "care-stabilizing-psd",
+        Evidence::LatticeCount { .. } => "lattice-sample-exact",
     }
 }
 
@@ -997,6 +1017,66 @@ mod tests {
         .is_none());
     }
 
+    // ===== Stage 4 (Barvinok) tripwires — exact, no tolerance =====
+
+    fn triangle_cs() -> jeff_math::lattice::ConstraintSystem {
+        use jeff_math::lattice::{ConstraintSystem, LinIneq, Rel};
+        ConstraintSystem {
+            n_vars: 2,
+            ineqs: vec![
+                LinIneq { var: vec![1, 0], param: 0, c: 0, rel: Rel::Ge },
+                LinIneq { var: vec![-1, 1], param: 0, c: 0, rel: Rel::Ge },
+                LinIneq { var: vec![0, -1], param: 1, c: 0, rel: Rel::Ge },
+            ],
+            congrs: vec![],
+        }
+    }
+
+    /// `false_count_rejected`: a quasi-polynomial that disagrees with the exact
+    /// brute-force enumeration at any sampled `n` is rejected (F.4).
+    #[test]
+    fn false_count_rejected() {
+        use jeff_math::lattice::ehrhart_interpolate;
+        use jeff_math::UniPoly;
+        let cs = triangle_cs();
+        let qp = ehrhart_interpolate(&cs).unwrap();
+        assert!(verify(cert(Evidence::LatticeCount {
+            cs: cs.clone(),
+            qp: qp.clone(),
+            n_lo: 0,
+            n_hi: 20,
+        }))
+        .is_some());
+        // tamper the polynomial → mismatches enumeration → reject.
+        let mut bad = qp;
+        bad.polys[0] = UniPoly::constant(BigRational::from(BigInt::from(999)));
+        assert!(verify(cert(Evidence::LatticeCount {
+            cs,
+            qp: bad,
+            n_lo: 0,
+            n_hi: 20,
+        }))
+        .is_none());
+    }
+
+    /// `chamber_coverage_check`: a period that does not match the number of residue
+    /// polynomials does not partition the parameter line → rejected.
+    #[test]
+    fn chamber_coverage_rejected() {
+        use jeff_math::lattice::{ehrhart_interpolate, QuasiPoly};
+        let cs = triangle_cs();
+        let good = ehrhart_interpolate(&cs).unwrap();
+        // claim period 2 but provide only one residue polynomial → coverage fails.
+        let bad = QuasiPoly { period: 2, polys: good.polys.clone() };
+        assert!(verify(cert(Evidence::LatticeCount {
+            cs,
+            qp: bad,
+            n_lo: 0,
+            n_hi: 5,
+        }))
+        .is_none());
+    }
+
     /// Tier-A residual certificates serialize → deserialize → re-verify (R25).
     #[test]
     fn tier_a_certs_round_trip() {
@@ -1042,6 +1122,11 @@ mod tests {
                 n: 1,
                 m: 1,
                 tol: 1e-9,
+            },
+            {
+                let cs = triangle_cs();
+                let qp = jeff_math::lattice::ehrhart_interpolate(&cs).unwrap();
+                Evidence::LatticeCount { cs, qp, n_lo: 0, n_hi: 12 }
             },
         ];
         for ev in evs {
