@@ -16,6 +16,9 @@
 //! Nothing here trusts the construction: the polynomial identity is independently
 //! checked, and a wrong closed form fails to verify (DR1/DR7).
 
+pub mod gosper;
+pub mod zeilberger;
+
 use jeff_cert::{
     Boundary, Certificate, Collapsed, CollapseOutcome, Defer, Evidence, IrRef, Obligation,
 };

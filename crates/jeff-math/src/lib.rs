@@ -11,6 +11,7 @@
 
 pub mod gf2;
 pub mod hyper;
+pub mod linsolve;
 pub mod matrix;
 pub mod modular;
 pub mod poly;

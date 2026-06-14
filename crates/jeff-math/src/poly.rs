@@ -270,6 +270,27 @@ impl Poly {
         self.subst_var_poly(name, &repl)
     }
 
+    /// Project to a univariate polynomial in `var`, or `None` if any other variable
+    /// appears (used by the Gosper machinery, which works in `k` alone).
+    pub fn to_unipoly(&self, var: &str) -> Option<UniPoly> {
+        let mut coeffs: Vec<BigRational> = Vec::new();
+        for (m, c) in &self.terms {
+            let mut deg = 0usize;
+            for (v, e) in m {
+                if v == var {
+                    deg = *e as usize;
+                } else {
+                    return None; // another variable present
+                }
+            }
+            if coeffs.len() <= deg {
+                coeffs.resize(deg + 1, BigRational::zero());
+            }
+            coeffs[deg] += c;
+        }
+        Some(UniPoly::from_coeffs(coeffs))
+    }
+
     /// Pretty representation (deterministic order), used in certificate JSON
     /// (APPENDIX H.3) and diagnostics.
     pub fn to_canonical_string(&self) -> String {
