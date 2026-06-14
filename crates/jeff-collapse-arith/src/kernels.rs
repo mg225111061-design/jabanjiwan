@@ -19,6 +19,8 @@ use jeff_cert::{
     BarrierTag, Boundary, Certificate, Collapsed, CollapseOutcome, Defer, Evidence, IrRef,
     Obligation,
 };
+use jeff_math::fmat::{self, FMat, Sparse};
+use jeff_math::nbody::{self, KernelKind};
 use jeff_math::{freivalds_seeds, IntMatrix, RatMatrix};
 use jeff_span::Span;
 use num_bigint::BigInt;
@@ -31,6 +33,10 @@ pub enum KernelResult {
     Inverse(RatMatrix),
     Product(IntMatrix),
     Ldlt(RatMatrix, Vec<BigRational>),
+    /// Tier-A approximate results.
+    LowRank(FMat),
+    Potentials(Vec<f64>),
+    Solution(Vec<f64>),
 }
 
 /// A kernel collapse attempt: the gated outcome plus the computed result.
@@ -196,6 +202,131 @@ pub fn cholesky_collapse(a: &RatMatrix) -> KernelOutcome {
     collapsed(cert, KernelResult::Ldlt(l, d))
 }
 
+// ===== Tier-A: approximate kernels (residual ≤ tol; demote if no structure) =====
+
+/// Randomized SVD low-rank approximation (HMT). Collapses iff the **measured**
+/// Frobenius residual `‖A − QQᵀA‖_F ≤ tol` (numerically-low-rank, structure
+/// confirmed by measurement, R19); otherwise demotes to constant-factor-only and
+/// reports the residual. A flat spectrum demotes — never ships a wrong low-rank (P0).
+pub fn rsvd_collapse(a: &FMat, k: usize, p: usize, tol: f64, seed: u64) -> KernelOutcome {
+    let q = fmat::randomized_range(a, k, p, seed);
+    let (approx, residual) = fmat::low_rank_approx(a, &q);
+    if residual > tol {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            &format!(
+                "not numerically low-rank: ‖A-QQᵀA‖_F = {residual:.3e} > tol {tol:.3e}; \
+                 fall back to full A (no asymptotic win)"
+            ),
+        );
+    }
+    let cert = Certificate {
+        collapser_id: "kernel/rsvd".into(),
+        source: node(),
+        collapsed: IrRef::new(2, Span::dummy()),
+        obligation: Obligation::new(format!(
+            "‖A − Â‖_F ≤ {tol:.3e} (Frobenius), Â rank≈{k}; HMT 2011 Thm 10.5 expectation \
+             with oversampling p={p}; cert is the measured residual"
+        )),
+        evidence: Evidence::LowRankResidual {
+            a: a.data.clone(),
+            approx: approx.data.clone(),
+            rows: a.rows,
+            cols: a.cols,
+            tol,
+        },
+        boundaries: vec![Boundary::new(format!(
+            "structural: measured Frobenius residual {residual:.3e} ≤ tol {tol:.3e}"
+        ))],
+        fallback: node(),
+    };
+    collapsed(cert, KernelResult::LowRank(approx))
+}
+
+/// Fast N-body summation (Barnes–Hut). Demotes for a non-decaying kernel (no valid
+/// far field) or if the measured residual exceeds tol; otherwise collapses with a
+/// certificate checked against the **exact** O(N²) direct sum.
+pub fn fmm_collapse(
+    points: &[f64],
+    charges: &[f64],
+    kernel: KernelKind,
+    theta: f64,
+    tol: f64,
+) -> KernelOutcome {
+    if !kernel.is_decaying() {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            "kernel does not decay with distance; far-field approximation invalid → direct O(N²)",
+        );
+    }
+    let phi = nbody::barnes_hut(points, charges, kernel, theta);
+    let exact = nbody::direct_sum(points, charges, kernel);
+    let residual = nbody::max_abs_diff(&phi, &exact);
+    if residual > tol {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            &format!("BH residual {residual:.3e} > tol {tol:.3e} at θ={theta}; reduce θ or use direct sum"),
+        );
+    }
+    let cert = Certificate {
+        collapser_id: "kernel/fmm-bh".into(),
+        source: node(),
+        collapsed: IrRef::new(2, Span::dummy()),
+        obligation: Obligation::new(format!(
+            "‖φ_fast − φ_exact‖∞ ≤ {tol:.3e}; checker recomputes φ_exact by exact direct sum; \
+             decaying kernel (precondition measured)"
+        )),
+        evidence: Evidence::FmmResidual {
+            points: points.to_vec(),
+            charges: charges.to_vec(),
+            kernel,
+            phi: phi.clone(),
+            tol,
+        },
+        boundaries: vec![Boundary::new("kernel is decaying; θ < 2 (target outside far nodes)")],
+        fallback: node(),
+    };
+    collapsed(cert, KernelResult::Potentials(phi))
+}
+
+/// Krylov (conjugate gradients) for sparse SPD `A x = b`. Demotes for a dense matrix
+/// (no sparsity advantage) or non-convergence; otherwise collapses with the
+/// deterministic residual `‖Ax−b‖₂ ≤ tol`.
+pub fn krylov_collapse(a: &Sparse, b: &[f64], tol: f64, max_iter: usize) -> KernelOutcome {
+    let n = a.n;
+    if a.nnz() * 4 > n * n {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            "matrix is not sparse (nnz ~ n²); Krylov gives no asymptotic advantage over a direct solve",
+        );
+    }
+    let (x, residual) = fmat::cg_solve(a, b, max_iter);
+    if residual > tol {
+        return defer(
+            BarrierTag::ConstantFactorOnly,
+            &format!("CG did not reach tol ({residual:.3e} > {tol:.3e}) in {max_iter} iters; fall back to a direct solver"),
+        );
+    }
+    let cert = Certificate {
+        collapser_id: "kernel/krylov-cg".into(),
+        source: node(),
+        collapsed: IrRef::new(2, Span::dummy()),
+        obligation: Obligation::new(format!(
+            "‖A x − b‖₂ ≤ {tol:.3e} (deterministic residual); A sparse SPD"
+        )),
+        evidence: Evidence::LinSolveResidual {
+            entries: a.entries.clone(),
+            dim: n,
+            b: b.to_vec(),
+            x: x.clone(),
+            tol,
+        },
+        boundaries: vec![Boundary::new(format!("structural: nnz={} ≪ n²={}", a.nnz(), n * n))],
+        fallback: node(),
+    };
+    collapsed(cert, KernelResult::Solution(x))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +387,81 @@ mod tests {
             d[i * 8 + i] = (i as i64) + 2;
         }
         d
+    }
+
+    // ----- Tier-A collapsers -----
+
+    #[test]
+    fn rsvd_collapses_low_rank_demotes_flat() {
+        let n = 6;
+        let u = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let v = [1.0, 0.5, 0.25, 2.0, 1.0, 3.0];
+        let mut data = vec![0.0; n * n];
+        for i in 0..n {
+            for j in 0..n {
+                data[i * n + j] = u[i] * v[j]; // rank-1
+            }
+        }
+        let a = FMat::from_data(n, n, data);
+        assert!(
+            matches!(rsvd_collapse(&a, 1, 4, 1e-6, 7).outcome, CollapseOutcome::Collapsed(_)),
+            "rank-1 matrix collapses"
+        );
+        // identity: flat spectrum, full rank → demote.
+        let mut id = vec![0.0; n * n];
+        for i in 0..n {
+            id[i * n + i] = 1.0;
+        }
+        let idm = FMat::from_data(n, n, id);
+        assert!(
+            matches!(rsvd_collapse(&idm, 2, 3, 1e-6, 7).outcome, CollapseOutcome::Defer(_)),
+            "flat spectrum demotes (no low-rank structure)"
+        );
+    }
+
+    #[test]
+    fn fmm_collapses_decaying_demotes_oscillatory() {
+        let pts: Vec<f64> = (0..64).map(|i| i as f64).collect();
+        let chg: Vec<f64> = (0..64).map(|i| 1.0 + (i % 3) as f64).collect();
+        assert!(matches!(
+            fmm_collapse(&pts, &chg, KernelKind::Exponential { decay: 1.0 }, 0.2, 1e-2).outcome,
+            CollapseOutcome::Collapsed(_)
+        ));
+        assert!(
+            matches!(
+                fmm_collapse(&pts, &chg, KernelKind::Cosine { freq: 3.0 }, 0.2, 1e-2).outcome,
+                CollapseOutcome::Defer(_)
+            ),
+            "oscillatory kernel demotes"
+        );
+    }
+
+    #[test]
+    fn krylov_collapses_sparse_demotes_dense() {
+        let n = 20;
+        let mut a = Sparse::new(n);
+        for i in 0..n {
+            a.push(i, i, 4.0);
+            if i + 1 < n {
+                a.push(i, i + 1, -1.0);
+                a.push(i + 1, i, -1.0);
+            }
+        }
+        let b = vec![1.0; n];
+        assert!(matches!(
+            krylov_collapse(&a, &b, 1e-9, 1000).outcome,
+            CollapseOutcome::Collapsed(_)
+        ));
+        // dense (nnz == n²) → demote.
+        let mut dense = Sparse::new(4);
+        for i in 0..4 {
+            for j in 0..4 {
+                dense.push(i, j, if i == j { 5.0 } else { 1.0 });
+            }
+        }
+        assert!(
+            matches!(krylov_collapse(&dense, &[1.0; 4], 1e-9, 100).outcome, CollapseOutcome::Defer(_)),
+            "dense matrix demotes"
+        );
     }
 }

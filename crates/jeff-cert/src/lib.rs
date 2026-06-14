@@ -206,6 +206,39 @@ pub enum Evidence {
         dim: usize,
         tol: f64,
     },
+
+    // ---- Stage 3 Tier-A approximate kernels (residual ≤ tol; exact is impossible) ----
+    /// Randomized low-rank approximation: `‖A − Â‖_F ≤ tol` (Frobenius), under the
+    /// numerically-low-rank assumption. The construction is probabilistic (HMT 2011,
+    /// Thm 10.5: `E‖A−QQᵀA‖_F ≤ (1 + k/(p−1))^{1/2}(Σ_{j>k}σ_j²)^{1/2}`), but the
+    /// certificate is the **measured** residual, so correctness does not depend on
+    /// that bound. Matrices are row-major `rows × cols`.
+    LowRankResidual {
+        a: Vec<f64>,
+        approx: Vec<f64>,
+        rows: usize,
+        cols: usize,
+        tol: f64,
+    },
+    /// N-body far-field residual: `‖φ_fast − φ_exact‖∞ ≤ tol`. The checker recomputes
+    /// `φ_exact` by the **exact O(N²) direct sum** (ground truth), so a wrong fast
+    /// potential is caught. Valid only for a decaying kernel (checked by the collapser).
+    FmmResidual {
+        points: Vec<f64>,
+        charges: Vec<f64>,
+        kernel: jeff_math::nbody::KernelKind,
+        phi: Vec<f64>,
+        tol: f64,
+    },
+    /// Krylov (CG) residual: `‖A x − b‖₂ ≤ tol` (deterministic). `A` is sparse
+    /// symmetric, given as `(i,j,value)` entries on a `dim`-dimensional space.
+    LinSolveResidual {
+        entries: Vec<(usize, usize, f64)>,
+        dim: usize,
+        b: Vec<f64>,
+        x: Vec<f64>,
+        tol: f64,
+    },
 }
 
 /// A small captured GF(2) linear circuit so the GF(2) certificate is self-contained

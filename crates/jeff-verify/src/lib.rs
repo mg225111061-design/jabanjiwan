@@ -320,9 +320,75 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+            // ---- Tier-A: residual ≤ tol, residual recomputed independently ----
+            Evidence::LowRankResidual {
+                a,
+                approx,
+                rows,
+                cols,
+                tol,
+            } => {
+                let (r, c) = (*rows, *cols);
+                if a.len() != r * c || approx.len() != r * c || !tol_ok(*tol) {
+                    return VerifyResult::Invalid;
+                }
+                let am = jeff_math::fmat::FMat::from_data(r, c, a.clone());
+                let bm = jeff_math::fmat::FMat::from_data(r, c, approx.clone());
+                if am.sub(&bm).frob_norm() <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::FmmResidual {
+                points,
+                charges,
+                kernel,
+                phi,
+                tol,
+            } => {
+                if points.len() != charges.len() || phi.len() != points.len() || !tol_ok(*tol) {
+                    return VerifyResult::Invalid;
+                }
+                // recompute the exact O(N²) direct sum — the ground truth.
+                let exact = jeff_math::nbody::direct_sum(points, charges, *kernel);
+                if jeff_math::nbody::max_abs_diff(phi, &exact) <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::LinSolveResidual {
+                entries,
+                dim,
+                b,
+                x,
+                tol,
+            } => {
+                if b.len() != *dim || x.len() != *dim || !tol_ok(*tol) {
+                    return VerifyResult::Invalid;
+                }
+                let mut a = jeff_math::fmat::Sparse::new(*dim);
+                for &(i, j, v) in entries {
+                    if i >= *dim || j >= *dim {
+                        return VerifyResult::Invalid;
+                    }
+                    a.push(i, j, v);
+                }
+                if jeff_math::fmat::lin_residual(&a, x, b) <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
+}
+
+/// A tolerance contract must be a finite, non-negative number.
+fn tol_ok(tol: f64) -> bool {
+    !tol.is_nan() && tol >= 0.0 && tol.is_finite()
 }
 
 /// Routes evidence to the right checker (PART 6.2 / APPENDIX F.6). Implements
@@ -342,7 +408,10 @@ impl Checker for DefaultRegistry {
             Evidence::MatrixInverse { .. }
             | Evidence::LdltSpd { .. }
             | Evidence::FreivaldsProduct { .. }
-            | Evidence::FloatResidual { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::FloatResidual { .. }
+            | Evidence::LowRankResidual { .. }
+            | Evidence::FmmResidual { .. }
+            | Evidence::LinSolveResidual { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -362,6 +431,9 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::LdltSpd { .. } => "exact-ldlt-spd",
         Evidence::FreivaldsProduct { .. } => "freivalds-exact",
         Evidence::FloatResidual { .. } => "float-residual-tol",
+        Evidence::LowRankResidual { .. } => "frobenius-residual-tol",
+        Evidence::FmmResidual { .. } => "nbody-residual-tol",
+        Evidence::LinSolveResidual { .. } => "l2-residual-tol",
     }
 }
 
@@ -713,6 +785,128 @@ mod tests {
             let json = serde_json::to_string(&c).unwrap();
             let back: jeff_cert::Certificate = serde_json::from_str(&json).unwrap();
             assert!(verify(back).is_some(), "round-tripped cert must re-verify");
+        }
+    }
+
+    // ===== Tier-A tripwires (checker-first; approximate certs) =====
+
+    /// `false_lowrank_rejected` / `residual_over_tol_rejected`: a low-rank cert whose
+    /// approximation does not meet the stated tol must be rejected.
+    #[test]
+    fn false_lowrank_rejected() {
+        // A = diag(1,1) ; a "rank-1" approx that drops one unit → residual 1 > tol.
+        let a = vec![1.0, 0.0, 0.0, 1.0];
+        let bad_approx = vec![1.0, 0.0, 0.0, 0.0]; // residual_F = 1
+        assert!(verify(cert(Evidence::LowRankResidual {
+            a: a.clone(),
+            approx: bad_approx,
+            rows: 2,
+            cols: 2,
+            tol: 1e-6,
+        }))
+        .is_none());
+        // an exact approx (residual 0) verifies.
+        assert!(verify(cert(Evidence::LowRankResidual {
+            a: a.clone(),
+            approx: a,
+            rows: 2,
+            cols: 2,
+            tol: 1e-6,
+        }))
+        .is_some());
+    }
+
+    /// An N-body fast potential that disagrees with the exact direct sum is rejected
+    /// (the checker recomputes the ground truth).
+    #[test]
+    fn false_fmm_potential_rejected() {
+        use jeff_math::nbody::{direct_sum, KernelKind};
+        let pts = vec![0.0, 1.0, 2.0, 3.0];
+        let chg = vec![1.0, 1.0, 1.0, 1.0];
+        let k = KernelKind::Exponential { decay: 1.0 };
+        let exact = direct_sum(&pts, &chg, k);
+        // correct potential verifies
+        assert!(verify(cert(Evidence::FmmResidual {
+            points: pts.clone(),
+            charges: chg.clone(),
+            kernel: k,
+            phi: exact.clone(),
+            tol: 1e-9,
+        }))
+        .is_some());
+        // wrong potential rejected
+        let mut wrong = exact;
+        wrong[0] += 1.0;
+        assert!(verify(cert(Evidence::FmmResidual {
+            points: pts,
+            charges: chg,
+            kernel: k,
+            phi: wrong,
+            tol: 1e-9,
+        }))
+        .is_none());
+    }
+
+    /// A linear-solve cert whose `x` does not satisfy `Ax≈b` within tol is rejected.
+    #[test]
+    fn false_linsolve_rejected() {
+        let entries = vec![(0, 0, 4.0), (0, 1, 1.0), (1, 0, 1.0), (1, 1, 3.0)];
+        let b = vec![1.0, 2.0];
+        // true solution of [[4,1],[1,3]]x=[1,2]: x=(1/11, 7/11)
+        let good = vec![1.0 / 11.0, 7.0 / 11.0];
+        assert!(verify(cert(Evidence::LinSolveResidual {
+            entries: entries.clone(),
+            dim: 2,
+            b: b.clone(),
+            x: good,
+            tol: 1e-9,
+        }))
+        .is_some());
+        assert!(verify(cert(Evidence::LinSolveResidual {
+            entries,
+            dim: 2,
+            b,
+            x: vec![0.0, 0.0],
+            tol: 1e-9,
+        }))
+        .is_none());
+    }
+
+    /// Tier-A residual certificates serialize → deserialize → re-verify (R25).
+    #[test]
+    fn tier_a_certs_round_trip() {
+        use jeff_math::nbody::{direct_sum, KernelKind};
+        let pts = vec![0.0, 1.0, 2.0];
+        let chg = vec![1.0, 2.0, 1.0];
+        let k = KernelKind::Exponential { decay: 0.7 };
+        let evs = vec![
+            Evidence::LowRankResidual {
+                a: vec![1.0, 0.0, 0.0, 1.0],
+                approx: vec![1.0, 0.0, 0.0, 1.0],
+                rows: 2,
+                cols: 2,
+                tol: 1e-9,
+            },
+            Evidence::FmmResidual {
+                points: pts.clone(),
+                charges: chg.clone(),
+                kernel: k,
+                phi: direct_sum(&pts, &chg, k),
+                tol: 1e-9,
+            },
+            Evidence::LinSolveResidual {
+                entries: vec![(0, 0, 2.0), (1, 1, 2.0)],
+                dim: 2,
+                b: vec![2.0, 4.0],
+                x: vec![1.0, 2.0],
+                tol: 1e-9,
+            },
+        ];
+        for ev in evs {
+            let c = cert(ev);
+            let json = serde_json::to_string(&c).unwrap();
+            let back: jeff_cert::Certificate = serde_json::from_str(&json).unwrap();
+            assert!(verify(back).is_some(), "Tier-A cert must re-verify after round-trip");
         }
     }
 
