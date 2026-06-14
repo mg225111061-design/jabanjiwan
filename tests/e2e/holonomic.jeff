@@ -1,0 +1,14 @@
+module examples.holonomic
+
+# Σ_k C(n,k) = 2^n — recognized holonomic, collapsed by Zeilberger creative
+# telescoping, certified by the exact telescoper checker, closed form 2^n.
+total fn sum_binom(n: nat) -> nat:
+    sum k in 0..=n: C(n, k)
+
+# Σ_k C(n,k)^2 = C(2n,n) — order-1 telescoper, certified.
+total fn sum_binom_sq(n: nat) -> nat:
+    sum k in 0..=n: C(n, k)**2
+
+# Σ_k k*C(n,k) = n*2^(n-1) — order-1 telescoper, certified.
+total fn sum_k_binom(n: nat) -> nat:
+    sum k in 0..=n: k * C(n, k)

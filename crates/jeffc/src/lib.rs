@@ -119,6 +119,34 @@ fn dispatch(f: &CoreFn, rec: &Recognized, opts: &Options) -> (JlirRegion, Compil
         }
     }
 
+    // Holonomic (Layer 1): definite hypergeometric sums via Zeilberger.
+    if !opts.force_fallback && matches!(rec.tag, DispatchTag::Holonomic) {
+        if let Some(ac) = jeff_collapse_arith::holonomic::collapse_holonomic(f) {
+            match ac.outcome {
+                jeff_cert::CollapseOutcome::Collapsed(c) => {
+                    let cert: VerifiedCertificate = c.certificate().clone();
+                    let checker = jeff_verify::checker_name(&cert.certificate().evidence).to_string();
+                    // residual is a closed form when available, else the original sum
+                    let residual = ac.residual.unwrap_or_else(|| f.body.clone());
+                    let region = JlirRegion::collapsed(f, residual, cert, 1);
+                    return (
+                        region,
+                        CompileStatus::Collapsed {
+                            layer: 1,
+                            collapser: "arith/holonomic".to_string(),
+                            checker,
+                            candidate_cost: rec.candidate_cost,
+                        },
+                    );
+                }
+                jeff_cert::CollapseOutcome::Defer(d) => {
+                    return (JlirRegion::deferred(f, d.tag), CompileStatus::Deferred { tag: d.tag });
+                }
+            }
+        }
+        // collapse_holonomic returned None ⇒ not actually a hypergeometric sum.
+    }
+
     // Not dispatched to a built collapser. Decide an honest status.
     let status = match rec.tag {
         DispatchTag::AffineTripCount => {

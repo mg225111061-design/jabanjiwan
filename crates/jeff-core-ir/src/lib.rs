@@ -69,6 +69,9 @@ pub enum CoreExprKind {
     Int(BigInt),
     Bin(BinOp, Box<CoreExpr>, Box<CoreExpr>),
     Neg(Box<CoreExpr>),
+    /// A builtin call: `C(a,b)` (binomial) or `fact(x)` (factorial). These give the
+    /// holonomic (Layer 1) recognizer/collapser concrete hypergeometric summands.
+    Call(String, Vec<CoreExpr>),
     /// Single-binder reduction over a range (the first-class recognizer input).
     Reduction {
         kind: RedKind,
@@ -124,6 +127,51 @@ pub enum EvalError {
     NegativeExponent,
     /// A reduction range was unbounded/too large to evaluate concretely.
     RangeTooLarge,
+    /// A call to an unknown/unsupported builtin.
+    UnknownCall(String),
+}
+
+/// Binomial coefficient `C(n,k)` over the integers; `0` when `k<0` or `k>n` (for
+/// `n>=0`). Exact (R33). Used by the naive oracle for holonomic sums (AR-4).
+pub fn binomial(n: &BigInt, k: &BigInt) -> BigInt {
+    use num_traits::Signed;
+    if k.is_negative() {
+        return BigInt::zero();
+    }
+    if n.is_negative() {
+        // generalized binomial: C(n,k) = (-1)^k C(k-n-1, k); not needed for the
+        // nonneg summation ranges here — return 0 conservatively.
+        return BigInt::zero();
+    }
+    if k > n {
+        return BigInt::zero();
+    }
+    // multiplicative: Π_{i=1}^{k} (n-k+i)/i, exact
+    let mut num = BigInt::one();
+    let mut den = BigInt::one();
+    let mut i = BigInt::one();
+    let kk = k.clone();
+    while i <= kk {
+        num *= n - &kk + &i;
+        den *= &i;
+        i += 1;
+    }
+    num / den
+}
+
+/// Factorial `x!` for `x >= 0`.
+pub fn factorial(x: &BigInt) -> BigInt {
+    use num_traits::Signed;
+    if x.is_negative() {
+        return BigInt::zero();
+    }
+    let mut acc = BigInt::one();
+    let mut i = BigInt::one();
+    while &i <= x {
+        acc *= &i;
+        i += 1;
+    }
+    acc
 }
 
 /// Exact evaluation of a core expression under an integer environment.
@@ -137,6 +185,15 @@ pub fn eval(e: &CoreExpr, env: &BTreeMap<Var, BigInt>) -> Result<BigInt, EvalErr
             let l = eval(a, env)?;
             let r = eval(b, env)?;
             eval_bin(*op, l, r)
+        }
+        CoreExprKind::Call(name, args) => {
+            let vals: Result<Vec<BigInt>, EvalError> = args.iter().map(|a| eval(a, env)).collect();
+            let vals = vals?;
+            match (name.as_str(), vals.as_slice()) {
+                ("C", [n, k]) => Ok(binomial(n, k)),
+                ("fact", [x]) => Ok(factorial(x)),
+                _ => Err(EvalError::UnknownCall(name.clone())),
+            }
         }
         CoreExprKind::Reduction {
             kind,

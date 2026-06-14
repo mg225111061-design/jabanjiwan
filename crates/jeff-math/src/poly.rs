@@ -143,6 +143,23 @@ impl Poly {
         self.terms.values().all(Zero::is_zero)
     }
 
+    /// Iterate `(monomial, coefficient)` pairs in canonical order. Used by the
+    /// Zeilberger ansatz to extract a linear system from a certificate numerator.
+    pub fn monomials(&self) -> impl Iterator<Item = (&Monomial, &BigRational)> {
+        self.terms.iter()
+    }
+
+    /// Number of distinct variables actually present.
+    pub fn vars(&self) -> std::collections::BTreeSet<String> {
+        let mut s = std::collections::BTreeSet::new();
+        for m in self.terms.keys() {
+            for (v, _) in m {
+                s.insert(v.clone());
+            }
+        }
+        s
+    }
+
     pub fn neg(&self) -> Poly {
         let mut out = Poly::zero();
         for (m, c) in &self.terms {

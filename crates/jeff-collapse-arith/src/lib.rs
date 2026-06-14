@@ -17,6 +17,7 @@
 //! checked, and a wrong closed form fails to verify (DR1/DR7).
 
 pub mod gosper;
+pub mod holonomic;
 pub mod zeilberger;
 
 use jeff_cert::{
@@ -183,6 +184,7 @@ pub fn to_unipoly(e: &CoreExpr, binder: &str) -> Option<UniPoly> {
                 _ => None,
             }
         }
+        CoreExprKind::Call(..) => None, // binomial/factorial: not a polynomial in the binder
         CoreExprKind::Reduction { .. } => None,
     }
 }

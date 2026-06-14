@@ -128,6 +128,9 @@ fn emit_expr(
             Ok(r)
         }
         CoreExprKind::Bin(op, a, b) => emit_bin(e, *op, a, b, env),
+        CoreExprKind::Call(name, _) => Err(CodegenError::Unsupported(format!(
+            "builtin call '{name}' in codegen (holonomic closed-form codegen is backend work)"
+        ))),
         CoreExprKind::Reduction {
             kind,
             binder,

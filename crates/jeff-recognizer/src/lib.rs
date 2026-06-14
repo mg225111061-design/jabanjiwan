@@ -79,6 +79,14 @@ pub fn recognize(f: &CoreFn, _budget: SaturationBudget) -> Recognized {
                     original_cost: AsymptoticCost::Linear,
                     candidate_cost: AsymptoticCost::Const,
                 }
+            } else if mentions_call(body) {
+                // Σ of a hypergeometric summand (binomial / factorial) → holonomic
+                // (Gosper / Zeilberger creative telescoping).
+                Recognized {
+                    tag: DispatchTag::Holonomic,
+                    original_cost: AsymptoticCost::Linear,
+                    candidate_cost: AsymptoticCost::Sublinear,
+                }
             } else if is_geometric_in(body, binder) {
                 // Σ base^i → linear state transition (eigen / Bostan–Mori). The
                 // collapser for this is Stage 1/3; recognise it honestly here.
@@ -131,7 +139,20 @@ pub fn is_polynomial_in(e: &CoreExpr, binder: &str) -> bool {
             }
             _ => false,
         },
+        CoreExprKind::Call(..) => false, // a binomial/factorial call is not a polynomial
         CoreExprKind::Reduction { .. } => false,
+    }
+}
+
+/// Does `e` contain a builtin call (binomial / factorial) — i.e. is it a
+/// hypergeometric summand candidate for the holonomic collapser?
+fn mentions_call(e: &CoreExpr) -> bool {
+    match &e.kind {
+        CoreExprKind::Call(..) => true,
+        CoreExprKind::Neg(a) => mentions_call(a),
+        CoreExprKind::Bin(_, a, b) => mentions_call(a) || mentions_call(b),
+        CoreExprKind::Reduction { body, .. } => mentions_call(body),
+        _ => false,
     }
 }
 
@@ -143,6 +164,7 @@ fn is_geometric_in(e: &CoreExpr, binder: &str) -> bool {
             CoreExprKind::Int(_) => false,
             CoreExprKind::Neg(a) => mentions(a, binder),
             CoreExprKind::Bin(_, a, b) => mentions(a, binder) || mentions(b, binder),
+            CoreExprKind::Call(_, args) => args.iter().any(|a| mentions(a, binder)),
             CoreExprKind::Reduction { body, .. } => mentions(body, binder),
         }
     }

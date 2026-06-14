@@ -145,6 +145,30 @@ fn lower_expr(e: &ast::Expr) -> Result<CoreExpr, Vec<Diagnostic>> {
             })?;
             CoreExprKind::Bin(bop, Box::new(la), Box::new(lb))
         }
+        ast::ExprKind::Call(callee, args) => {
+            // Only the holonomic builtins C(a,b) and fact(x) are in the Stage-0/1
+            // executable subset; other calls (e.g. user recursion) are later stages.
+            let name = match &callee.kind {
+                ast::ExprKind::Var(n) => n.clone(),
+                _ => {
+                    return Err(vec![err(
+                        span,
+                        "only direct builtin calls C(..)/fact(..) are lowered yet",
+                    )])
+                }
+            };
+            if name != "C" && name != "fact" {
+                return Err(vec![err(
+                    span,
+                    format!("call to '{name}' is not in the executable subset (builtins: C, fact)"),
+                )]);
+            }
+            let mut largs = Vec::with_capacity(args.len());
+            for a in args {
+                largs.push(lower_expr(a)?);
+            }
+            CoreExprKind::Call(name, largs)
+        }
         ast::ExprKind::Reduction {
             kind,
             binder,
