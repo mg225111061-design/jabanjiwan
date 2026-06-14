@@ -382,6 +382,58 @@ pub enum Evidence {
         n: usize,
         tol: f64,
     },
+
+    // ---- Stage 6A Batch 2: planted / spiked detection (threshold-conditional) ----
+    /// 2.1 BBP spike: `cov` is a flat `p×p` covariance. Checker recomputes the top two
+    /// eigenvalues and verifies `λ₁ ≥ threshold` (BBP edge) AND `λ₁−λ₂ ≥ gap`.
+    SpikedCovariance {
+        cov: Vec<f64>,
+        p: usize,
+        threshold: f64,
+        gap: f64,
+    },
+    /// 2.2 Planted clique: `adj` flat `n×n` (0/1). Checker verifies the `clique` vertex
+    /// set is **exactly a clique** (all pairs adjacent) of size ≥ k. Exact.
+    PlantedClique {
+        adj: Vec<u8>,
+        n: usize,
+        clique: Vec<usize>,
+        k: usize,
+    },
+    /// 2.3 SBM community detection: `adj` flat `n×n`. Checker recomputes the 2nd
+    /// adjacency eigenvalue and verifies it exceeds the KS spectral `threshold`.
+    SbmCommunity {
+        adj: Vec<u8>,
+        n: usize,
+        threshold: f64,
+    },
+    /// 2.4 Spiked tensor (efficient regime): `tensor` flat `p³`. Checker verifies the
+    /// unfolding top singular value ≥ `threshold` AND `‖T − β·v⊗v⊗v‖_F ≤ tol`.
+    SpikedTensor {
+        tensor: Vec<f64>,
+        p: usize,
+        v: Vec<f64>,
+        beta: f64,
+        threshold: f64,
+        tol: f64,
+    },
+    /// 2.5 Sparse PCA: `cov` flat `p×p`, claimed sparse unit `v`. Checker verifies
+    /// `‖v‖₀ ≤ k` AND `vᵀΣ̂v ≥ threshold`.
+    SparsePca {
+        cov: Vec<f64>,
+        p: usize,
+        v: Vec<f64>,
+        k: usize,
+        threshold: f64,
+    },
+    /// 2.6 Spectral 2-XOR refutation (honest negative): `signed_adj` flat `n×n`, `m`
+    /// constraints. Checker recomputes `(m + λ_max·n)/2` and verifies it is `< m`,
+    /// certifying the system is unsatisfiable (a spectral witness of absence).
+    XorRefutation {
+        signed_adj: Vec<f64>,
+        n: usize,
+        m: usize,
+    },
 }
 
 impl Evidence {
@@ -428,6 +480,14 @@ impl Evidence {
             }
             Evidence::SuperResolution { .. } => CertClass::ThresholdConditional,
             Evidence::EquiangularTightFrame { .. } => CertClass::Exact,
+            // Batch 2: phase-transition detection — threshold-conditional, except the
+            // planted-clique certificate which is an exact clique check.
+            Evidence::PlantedClique { .. } => CertClass::Exact,
+            Evidence::SpikedCovariance { .. }
+            | Evidence::SbmCommunity { .. }
+            | Evidence::SpikedTensor { .. }
+            | Evidence::SparsePca { .. }
+            | Evidence::XorRefutation { .. } => CertClass::ThresholdConditional,
         }
     }
 }

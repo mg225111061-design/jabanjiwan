@@ -53,6 +53,10 @@ pub enum BarrierTag {
     /// Intrinsic dimension ≈ ambient (matrix completion / manifold / diffusion): no
     /// low-dimensional structure to exploit, so no compression is possible.
     HighIntrinsicDimension,
+    /// Statistical-to-computational gap: the signal is information-theoretically present
+    /// but no known polynomial algorithm recovers it (spiked tensor √p≲β≲p^{3/4};
+    /// low-degree / SoS lower bounds). Conjectural hardness ⇒ defer, class `open`.
+    StatComputationalGap,
 }
 
 impl BarrierTag {
@@ -78,6 +82,7 @@ impl BarrierTag {
             FlatSpectrum => "flat-spectrum",
             BelowDetectionThreshold => "below-detection-threshold",
             HighIntrinsicDimension => "high-intrinsic-dimension",
+            StatComputationalGap => "stat-computational-gap",
         }
     }
 
@@ -103,6 +108,7 @@ impl BarrierTag {
             FlatSpectrum => "Welch 1974 — flat/high-coherence spectrum has no heavy structure",
             BelowDetectionThreshold => "BBP 2005 / KS / Johnson radius — signal below detectability",
             HighIntrinsicDimension => "intrinsic dimension ≈ ambient; no low-rank/manifold structure",
+            StatComputationalGap => "low-degree/SoS lower bounds — conjectured no efficient algorithm",
         }
     }
 
@@ -144,6 +150,9 @@ impl BarrierTag {
             }
             HighIntrinsicDimension => {
                 "intrinsic dimension ≈ ambient; no low-rank/manifold structure to compress"
+            }
+            StatComputationalGap => {
+                "signal present but in the statistical-to-computational gap; no efficient algorithm (open)"
             }
         }
     }

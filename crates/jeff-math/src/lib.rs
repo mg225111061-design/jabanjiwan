@@ -20,6 +20,7 @@ pub mod matrix;
 pub mod modular;
 pub mod nbody;
 pub mod ot;
+pub mod planted;
 pub mod poly;
 pub mod pqc;
 pub mod prony;

@@ -622,6 +622,77 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+
+            // ---- Batch 2: planted / spiked detection ----
+            Evidence::SpikedCovariance { cov, p, threshold, gap } => {
+                if cov.len() != p * p || threshold.is_nan() || gap.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let (l1, l2) = jeff_math::planted::top_two_eigenvalues(cov, *p);
+                if l1 >= *threshold && (l1 - l2) >= *gap {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::PlantedClique { adj, n, clique, k } => {
+                if adj.len() != n * n {
+                    return VerifyResult::Invalid;
+                }
+                // EXACT: the returned set is literally a clique of size ≥ k.
+                if clique.len() >= *k && jeff_math::planted::is_clique(adj, *n, clique) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::SbmCommunity { adj, n, threshold } => {
+                if adj.len() != n * n || threshold.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let (l2, _) = jeff_math::planted::sbm_detect(adj, *n);
+                if l2 >= *threshold {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::SpikedTensor { tensor, p, v, beta, threshold, tol } => {
+                if tensor.len() != p * p * p || v.len() != *p || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let (sigma, _) = jeff_math::planted::tensor_unfold_top(tensor, *p);
+                let resid = jeff_math::planted::rank1_tensor_residual(tensor, v, *beta, *p);
+                if sigma >= *threshold && resid <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::SparsePca { cov, p, v, k, threshold } => {
+                if cov.len() != p * p || v.len() != *p || threshold.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let nnz = v.iter().filter(|x| x.abs() > 1e-9).count();
+                let qf = jeff_math::planted::quad_form(cov, v, *p);
+                if nnz <= *k && qf >= *threshold {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::XorRefutation { signed_adj, n, m } => {
+                if signed_adj.len() != n * n {
+                    return VerifyResult::Invalid;
+                }
+                // refutation witness: spectral max-sat bound strictly below m ⇒ UNSAT.
+                let max_sat = jeff_math::planted::xor_spectral_max_sat(signed_adj, *n, *m);
+                if max_sat < *m as f64 {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -661,7 +732,13 @@ impl Checker for DefaultRegistry {
             | Evidence::MatrixCompletion { .. }
             | Evidence::PronyRecurrence { .. }
             | Evidence::SuperResolution { .. }
-            | Evidence::EquiangularTightFrame { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::EquiangularTightFrame { .. }
+            | Evidence::SpikedCovariance { .. }
+            | Evidence::PlantedClique { .. }
+            | Evidence::SbmCommunity { .. }
+            | Evidence::SpikedTensor { .. }
+            | Evidence::SparsePca { .. }
+            | Evidence::XorRefutation { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -693,6 +770,12 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::PronyRecurrence { .. } => "prony-recurrence-exact",
         Evidence::SuperResolution { .. } => "superres-model-residual",
         Evidence::EquiangularTightFrame { .. } => "welch-etf-exact",
+        Evidence::SpikedCovariance { .. } => "bbp-eigen-threshold",
+        Evidence::PlantedClique { .. } => "clique-exact",
+        Evidence::SbmCommunity { .. } => "sbm-spectral-threshold",
+        Evidence::SpikedTensor { .. } => "tensor-unfold-residual",
+        Evidence::SparsePca { .. } => "sparsepca-quadform",
+        Evidence::XorRefutation { .. } => "xor-spectral-refutation",
     }
 }
 
@@ -1062,6 +1145,62 @@ mod tests {
             tol: 1e-9,
         };
         assert!(verify(cert(bad)).is_none());
+    }
+
+    // ===== Stage 6A Batch 2: planted / spiked detection certificates =====
+
+    #[test]
+    fn false_spike_rejected() {
+        // identity covariance has no spike: λ₁≈λ₂≈1, so a claimed BBP detection at a
+        // high threshold must be rejected (no detached eigenvalue, no gap).
+        let p = 5;
+        let mut cov = vec![0.0; p * p];
+        for i in 0..p {
+            cov[i * p + i] = 1.0;
+        }
+        let ev = Evidence::SpikedCovariance { cov, p, threshold: 3.0, gap: 0.5 };
+        assert!(verify(cert(ev)).is_none(), "no spike ⇒ reject");
+    }
+
+    #[test]
+    fn false_clique_rejected() {
+        // claim a 3-clique on a triangle missing edge (0,2) → not a clique → reject.
+        let n = 3;
+        let adj = vec![0u8, 1, 0, 1, 0, 1, 0, 1, 0];
+        let ev = Evidence::PlantedClique { adj, n, clique: vec![0, 1, 2], k: 3 };
+        assert!(verify(cert(ev)).is_none());
+    }
+
+    #[test]
+    fn planted_clique_exact_cert_valid() {
+        // a real triangle (0,1,2) all adjacent → exact clique cert verifies.
+        let n = 3;
+        let adj = vec![0u8, 1, 1, 1, 0, 1, 1, 1, 0];
+        let ev = Evidence::PlantedClique { adj, n, clique: vec![0, 1, 2], k: 3 };
+        assert_eq!(ev.cert_class(), jeff_cert::CertClass::Exact);
+        assert!(verify(cert(ev)).is_some());
+    }
+
+    #[test]
+    fn xor_refutation_witness_valid_and_loose_rejected() {
+        // dense random 2-XOR: spectral bound bites → valid UNSAT witness.
+        let n = 16;
+        let mut rng = jeff_math::fmat::Rng::new(0xAA);
+        let m = 300;
+        let mut cons = Vec::new();
+        for _ in 0..m {
+            let i = (rng.next_u64() as usize) % n;
+            let mut j = (rng.next_u64() as usize) % n;
+            if j == i {
+                j = (j + 1) % n;
+            }
+            cons.push((i, j, (rng.next_u64() & 1) as u8));
+        }
+        let sa = jeff_math::planted::signed_adjacency(&cons, n);
+        assert!(verify(cert(Evidence::XorRefutation { signed_adj: sa, n, m })).is_some());
+        // a single constraint cannot be refuted → bound = m, not < m → reject.
+        let sa1 = jeff_math::planted::signed_adjacency(&[(0, 1, 0)], n);
+        assert!(verify(cert(Evidence::XorRefutation { signed_adj: sa1, n, m: 1 })).is_none());
     }
 
     // ===== Verifier-integrity tripwires (MIDBUILD_AUDIT §A.1) =====

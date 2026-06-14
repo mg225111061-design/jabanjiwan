@@ -19,6 +19,7 @@
 pub mod gosper;
 pub mod holonomic;
 pub mod kernels;
+pub mod planted;
 pub mod sparse;
 pub mod zeilberger;
 

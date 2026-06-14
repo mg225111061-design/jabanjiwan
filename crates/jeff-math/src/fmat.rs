@@ -203,6 +203,74 @@ impl FMat {
     }
 }
 
+/// Symmetric eigendecomposition via the cyclic Jacobi algorithm. Returns
+/// `(eigenvalues, eigenvectors)` sorted by **descending** eigenvalue, eigenvectors as
+/// the columns of the returned matrix. Robust for small symmetric matrices; used by the
+/// spectral kernels (BBP spike, sparse PCA, spectral clustering eigengaps, …). Assumes
+/// `a` is symmetric (callers symmetrize first).
+pub fn jacobi_eig(a: &FMat) -> (Vec<f64>, FMat) {
+    let n = a.rows;
+    let mut m = a.clone();
+    let mut v = FMat::identity(n);
+    if n == 0 {
+        return (vec![], v);
+    }
+    for _ in 0..100 {
+        // largest off-diagonal magnitude
+        let mut off = 0.0;
+        let (mut p, mut q) = (0usize, 1usize.min(n - 1));
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if m.get(i, j).abs() > off {
+                    off = m.get(i, j).abs();
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+        if off < 1e-14 || n == 1 {
+            break;
+        }
+        let app = m.get(p, p);
+        let aqq = m.get(q, q);
+        let apq = m.get(p, q);
+        let theta = 0.5 * (aqq - app) / apq;
+        let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
+        let c = 1.0 / (t * t + 1.0).sqrt();
+        let s = t * c;
+        // apply rotation J^T M J
+        for i in 0..n {
+            let mip = m.get(i, p);
+            let miq = m.get(i, q);
+            m.set(i, p, c * mip - s * miq);
+            m.set(i, q, s * mip + c * miq);
+        }
+        for j in 0..n {
+            let mpj = m.get(p, j);
+            let mqj = m.get(q, j);
+            m.set(p, j, c * mpj - s * mqj);
+            m.set(q, j, s * mpj + c * mqj);
+        }
+        // accumulate eigenvectors
+        for i in 0..n {
+            let vip = v.get(i, p);
+            let viq = v.get(i, q);
+            v.set(i, p, c * vip - s * viq);
+            v.set(i, q, s * vip + c * viq);
+        }
+    }
+    let mut pairs: Vec<(f64, usize)> = (0..n).map(|i| (m.get(i, i), i)).collect();
+    pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let eigvals: Vec<f64> = pairs.iter().map(|&(e, _)| e).collect();
+    let mut eigvecs = FMat::zeros(n, n);
+    for (newcol, &(_, oldcol)) in pairs.iter().enumerate() {
+        for i in 0..n {
+            eigvecs.set(i, newcol, v.get(i, oldcol));
+        }
+    }
+    (eigvals, eigvecs)
+}
+
 /// Solve a dense `A x = b` in f64 via Gauss elimination with partial pivoting.
 /// `None` if (near-)singular. (Used for the Lyapunov Kronecker system.)
 pub fn solve_dense(a: &FMat, b: &[f64]) -> Option<Vec<f64>> {
@@ -265,7 +333,7 @@ impl Rng {
     pub fn new(seed: u64) -> Self {
         Rng { state: seed }
     }
-    fn next_u64(&mut self) -> u64 {
+    pub fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
