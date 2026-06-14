@@ -9,9 +9,13 @@ description = "Layer 0 recognizer: dispatch tags + cost + the Collapser trait (C
 jeff-cert = { workspace = true }
 jeff-core-ir = { workspace = true }
 jeff-span = { workspace = true }
+num-traits = { workspace = true }
+# Layer-0 equality saturation engine (CLAUDE.md D5). egg 0.10, MIT (R5-clean).
+egg = "0.10"
 
 [dev-dependencies]
 jeff-syntax = { workspace = true }
+num-bigint = { workspace = true }
 
 [lints]
 workspace = true

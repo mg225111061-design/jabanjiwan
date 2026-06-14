@@ -236,4 +236,40 @@ mod tests {
         let term = one_over_k();
         assert!(gosper_indefinite(&term).is_none(), "harmonic must not be summable");
     }
+
+    // ----- E.1 degree-bound regression guard (the off-by-one we fixed) -----
+    // In the cancellation case (deg a = deg b̃ AND lc a = lc b̃) the operator
+    // a·x(k+1) − b̃·x(k) drops degree by 1, so deg x = deg c − ℓ + 1. With a=b̃=1
+    // (ℓ=0) the antidifference of a degree-p polynomial summand has degree p+1.
+    // The constitution's E.1 pseudocode gives deg c − ℓ (one too small) and would
+    // make these return None. We trust the oracle, not the doc.
+    #[test]
+    fn degree_bound_cancellation_case_adds_one() {
+        let one = UniPoly::constant(BigRational::one());
+        let k = UniPoly::x();
+        assert_eq!(degree_bound(&one, &one, &k), Some(2)); // antidiff of k is degree 2
+        assert_eq!(degree_bound(&one, &one, &k.pow(2)), Some(3)); // k^2 -> degree 3
+        assert_eq!(degree_bound(&one, &one, &k.pow(3)), Some(4)); // k^3 -> degree 4
+    }
+
+    fn poly_term(p: Poly) -> HyperTerm {
+        HyperTerm {
+            coeff: BigRational::one(),
+            z_k: BigRational::one(),
+            poly: p,
+            gammas: vec![],
+        }
+    }
+
+    #[test]
+    fn gosper_polynomial_summands_are_summable() {
+        // t(k) = k, k^2, k^3 — all polynomial, all Gosper-summable (the cancellation
+        // case). With the old off-by-one these would (wrongly) report not-summable.
+        use jeff_math::hyper::gosper_holds;
+        for p in 1..=3u32 {
+            let term = poly_term(Poly::var("k").pow(p));
+            let r = gosper_indefinite(&term).unwrap_or_else(|| panic!("k^{p} must be summable"));
+            assert!(gosper_holds(&term, &r), "antidifference of k^{p} must verify");
+        }
+    }
 }

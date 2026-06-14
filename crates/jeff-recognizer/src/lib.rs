@@ -10,6 +10,8 @@
 use jeff_cert::CollapseOutcome;
 use jeff_core_ir::{BinOp, CoreExpr, CoreExprKind, CoreFn, CoreDomain, RedKind};
 
+pub mod egraph;
+
 pub use jeff_cert::CollapserId;
 
 /// Dispatch tags (PART 6.3 / glossary).
@@ -63,8 +65,10 @@ pub struct Recognized {
     pub candidate_cost: AsymptoticCost,
 }
 
-/// Recognize a function body (PART 10.1). Pure pattern dispatch for Stage 0.
-pub fn recognize(f: &CoreFn, _budget: SaturationBudget) -> Recognized {
+/// Recognize a function body (PART 10.1). Layer-0 equality saturation (egg)
+/// canonicalises the summand, then a principled classifier picks the dispatch tag.
+/// The recognizer only chooses dispatch — the collapser still verifies (P0).
+pub fn recognize(f: &CoreFn, budget: SaturationBudget) -> Recognized {
     match &f.body.kind {
         CoreExprKind::Reduction {
             kind: RedKind::Sum,
@@ -72,6 +76,11 @@ pub fn recognize(f: &CoreFn, _budget: SaturationBudget) -> Recognized {
             domain: CoreDomain::Range { .. },
             body,
         } => {
+            // egg equality saturation: semantics-preserving normal form of the
+            // summand (D5). Classification predicates run on the canonical form, so
+            // equivalent spellings (i*i vs i**2, i*1+0 vs i) dispatch alike.
+            let canon = egraph::normalize_summand(body, budget);
+            let body = &canon;
             if is_polynomial_in(body, binder) {
                 // Σ of a polynomial over an affine range → closed quasi-polynomial.
                 Recognized {
