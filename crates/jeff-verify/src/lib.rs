@@ -24,6 +24,7 @@ use jeff_math::modular::ModInt;
 use jeff_math::{ModMatrix, RatMatrix};
 use num_bigint::BigInt;
 use num_rational::BigRational;
+use num_traits::Zero;
 use std::collections::BTreeMap;
 
 /// Safety cap for exact replay loops, so a checker can never hang (R23). Beyond
@@ -250,6 +251,80 @@ fn unroll_linrec(rec: &[i64], init: &[i64], modulus: u64, index: u64) -> u64 {
     window[index as usize]
 }
 
+/// Stage-3 Tier-S numeric-kernel checker. Exact wherever possible (matrix inverse
+/// `=I`, LDLᵀ `=A` + SPD, Freivalds over ℤ); float only via an explicit-tol residual.
+pub struct KernelChecker;
+
+impl Checker for KernelChecker {
+    fn check(&self, ev: &Evidence, _ob: &Obligation, _b: &[Boundary]) -> VerifyResult {
+        match ev {
+            Evidence::MatrixInverse { m, inv } => {
+                if m.rows != m.cols || inv.rows != inv.cols || m.rows != inv.rows {
+                    return VerifyResult::Invalid;
+                }
+                // exact: m · inv == I
+                if m.mul(inv) == RatMatrix::identity(m.rows) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::LdltSpd { a, l, d } => {
+                if a.rows != a.cols || l.rows != l.cols || a.rows != l.rows || d.len() != a.rows {
+                    return VerifyResult::Invalid;
+                }
+                let recon = RatMatrix::from_ldlt(l, d);
+                let spd = d.iter().all(|x| *x > BigRational::zero());
+                if spd && recon == *a {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::FreivaldsProduct { a, b, c, dim, seeds } => {
+                let n = *dim;
+                if a.len() != n * n || b.len() != n * n || c.len() != n * n || seeds.is_empty() {
+                    return VerifyResult::Invalid;
+                }
+                let am = jeff_math::IntMatrix { n, data: a.clone() };
+                let bm = jeff_math::IntMatrix { n, data: b.clone() };
+                let cm = jeff_math::IntMatrix { n, data: c.clone() };
+                // exact Freivalds over ℤ with the recorded {0,1} vectors (R11 replay)
+                if am.freivalds(&bm, &cm, seeds) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::FloatResidual { m, inv, dim, tol } => {
+                let n = *dim;
+                // a NaN or negative tolerance is not a valid contract.
+                if m.len() != n * n || inv.len() != n * n || tol.is_nan() || *tol < 0.0 {
+                    return VerifyResult::Invalid;
+                }
+                // ‖m·inv − I‖∞ ≤ tol (soundness relative to the stated tol).
+                let mut worst = 0.0f64;
+                for i in 0..n {
+                    for j in 0..n {
+                        let mut s = 0.0f64;
+                        for k in 0..n {
+                            s += m[i * n + k] * inv[k * n + j];
+                        }
+                        let target = if i == j { 1.0 } else { 0.0 };
+                        worst = worst.max((s - target).abs());
+                    }
+                }
+                if worst <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            _ => VerifyResult::Unknown,
+        }
+    }
+}
+
 /// Routes evidence to the right checker (PART 6.2 / APPENDIX F.6). Implements
 /// [`Checker`] so it plugs straight into `verify_with`.
 pub struct DefaultRegistry;
@@ -264,6 +339,10 @@ impl Checker for DefaultRegistry {
             Evidence::NumericResidual { .. } | Evidence::PfaffianHolant { .. } => {
                 ReplayChecker.check(ev, ob, b)
             }
+            Evidence::MatrixInverse { .. }
+            | Evidence::LdltSpd { .. }
+            | Evidence::FreivaldsProduct { .. }
+            | Evidence::FloatResidual { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -279,6 +358,10 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::Gf2LinearIdentity { .. } => "gf2-basis",
         Evidence::NumericResidual { .. } => "exact-replay",
         Evidence::PfaffianHolant { .. } => "pfaffian-replay",
+        Evidence::MatrixInverse { .. } => "exact-matrix-inverse",
+        Evidence::LdltSpd { .. } => "exact-ldlt-spd",
+        Evidence::FreivaldsProduct { .. } => "freivalds-exact",
+        Evidence::FloatResidual { .. } => "float-residual-tol",
     }
 }
 
@@ -517,6 +600,120 @@ mod tests {
         };
         assert_eq!(super::check_result(&cert(beyond_cap.clone())), VerifyResult::Unknown);
         assert!(verify(cert(beyond_cap)).is_none()); // Unknown is NOT Valid (R31)
+    }
+
+    // ===== Stage 3 Tier-S tripwires (checker-first) =====
+
+    /// `false_inverse_rejected`: a wrong inverse must not verify (exact `=I`).
+    #[test]
+    fn false_inverse_rejected() {
+        use jeff_math::RatMatrix;
+        let m = RatMatrix::from_i64(2, 2, &[4, 3, 6, 3]);
+        let good = m.inverse().unwrap();
+        assert!(verify(cert(Evidence::MatrixInverse {
+            m: m.clone(),
+            inv: good.clone(),
+        }))
+        .is_some());
+        // tamper one entry of the inverse → reject.
+        let mut bad = good;
+        bad.data[0] += num_rational::BigRational::from(BigInt::from(1));
+        assert!(verify(cert(Evidence::MatrixInverse { m, inv: bad })).is_none());
+    }
+
+    /// `false_product_rejected`: a wrong matrix product must fail Freivalds.
+    #[test]
+    fn false_product_rejected() {
+        use jeff_math::{freivalds_seeds, IntMatrix};
+        let a = IntMatrix::from_i64(3, &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let b = IntMatrix::from_i64(3, &[9, 8, 7, 6, 5, 4, 3, 2, 1]);
+        let c = a.naive_mul(&b);
+        let seeds = freivalds_seeds(3, 40, 999);
+        let mk = |cc: &IntMatrix| Evidence::FreivaldsProduct {
+            a: a.data.clone(),
+            b: b.data.clone(),
+            c: cc.data.clone(),
+            dim: 3,
+            seeds: seeds.clone(),
+        };
+        assert!(verify(cert(mk(&c))).is_some(), "correct product verifies");
+        let mut wrong = c.clone();
+        wrong.data[4] += BigInt::from(1);
+        assert!(verify(cert(mk(&wrong))).is_none(), "wrong product rejected");
+    }
+
+    /// Non-SPD matrix must be refused by the LDLᵀ checker (a negative pivot).
+    #[test]
+    fn non_spd_ldlt_rejected() {
+        use jeff_math::RatMatrix;
+        let spd = RatMatrix::from_i64(2, 2, &[4, 2, 2, 3]);
+        let (l, d) = spd.ldlt().unwrap();
+        assert!(verify(cert(Evidence::LdltSpd { a: spd, l, d })).is_some());
+        // indefinite matrix: LDLᵀ exists but some D<0 → not SPD → reject.
+        let indef = RatMatrix::from_i64(2, 2, &[1, 2, 2, 1]);
+        let (l2, d2) = indef.ldlt().unwrap();
+        assert!(verify(cert(Evidence::LdltSpd { a: indef, l: l2, d: d2 })).is_none());
+    }
+
+    /// Float residual: within tol verifies; beyond tol is rejected (explicit tol).
+    #[test]
+    fn float_residual_respects_tol() {
+        // m = [[2,0],[0,4]], inv = [[0.5,0],[0,0.25]] → residual 0.
+        let m = vec![2.0, 0.0, 0.0, 4.0];
+        let good = vec![0.5, 0.0, 0.0, 0.25];
+        assert!(verify(cert(Evidence::FloatResidual {
+            m: m.clone(),
+            inv: good,
+            dim: 2,
+            tol: 1e-9,
+        }))
+        .is_some());
+        // perturb beyond tol → reject.
+        let bad = vec![0.6, 0.0, 0.0, 0.25];
+        assert!(verify(cert(Evidence::FloatResidual {
+            m,
+            inv: bad,
+            dim: 2,
+            tol: 1e-9,
+        }))
+        .is_none());
+    }
+
+    /// The Tier-S evidence kinds serialize → deserialize → re-verify (R25): the
+    /// certificates are self-contained and replayable from disk.
+    #[test]
+    fn kernel_certs_round_trip_and_reverify() {
+        use jeff_math::{freivalds_seeds, IntMatrix, RatMatrix};
+        let m = RatMatrix::from_i64(2, 2, &[4, 3, 6, 3]);
+        let inv = m.inverse().unwrap();
+        let a = IntMatrix::from_i64(2, &[1, 2, 3, 4]);
+        let b = IntMatrix::from_i64(2, &[5, 6, 7, 8]);
+        let c = a.naive_mul(&b);
+        let spd = RatMatrix::from_i64(2, 2, &[4, 2, 2, 3]);
+        let (l, d) = spd.ldlt().unwrap();
+        let evs = vec![
+            Evidence::MatrixInverse { m, inv },
+            Evidence::FreivaldsProduct {
+                a: a.data.clone(),
+                b: b.data.clone(),
+                c: c.data.clone(),
+                dim: 2,
+                seeds: freivalds_seeds(2, 24, 7),
+            },
+            Evidence::LdltSpd { a: spd, l, d },
+            Evidence::FloatResidual {
+                m: vec![2.0, 0.0, 0.0, 4.0],
+                inv: vec![0.5, 0.0, 0.0, 0.25],
+                dim: 2,
+                tol: 1e-9,
+            },
+        ];
+        for ev in evs {
+            let c = cert(ev);
+            let json = serde_json::to_string(&c).unwrap();
+            let back: jeff_cert::Certificate = serde_json::from_str(&json).unwrap();
+            assert!(verify(back).is_some(), "round-tripped cert must re-verify");
+        }
     }
 
     #[test]

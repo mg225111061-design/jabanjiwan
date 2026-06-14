@@ -18,6 +18,7 @@
 
 pub mod gosper;
 pub mod holonomic;
+pub mod kernels;
 pub mod zeilberger;
 
 use jeff_cert::{

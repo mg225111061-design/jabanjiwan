@@ -19,6 +19,8 @@
 
 use jeff_math::{Gf2Matrix, Gf2Vec, HyperTerm, Poly, RatFunc, RatMatrix};
 use jeff_span::{Diagnostic, Span};
+use num_bigint::BigInt;
+use num_rational::BigRational;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -142,7 +144,7 @@ pub struct SamplePoint {
 // boxed in `JlirRegion::Origin` and otherwise passed by reference to checkers. So
 // boxing every variant would add deref churn for no real benefit.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Evidence {
     /// The difference polynomial that must be identically zero.
     PolynomialIdentity { poly: Poly },
@@ -171,6 +173,39 @@ pub enum Evidence {
     NumericResidual { replay: ReplayKind },
     /// Planar #CSP / matching witness (E.5).
     PfaffianHolant { witness: HolantWitness },
+
+    // ---- Stage 3 Tier-S numeric kernels (exact-ring certificates preferred) ----
+    /// Sherman–Morrison / Woodbury: the claimed inverse `inv` of `m` is checked
+    /// **exactly** over ℚ by confirming `m · inv = I` (APPENDIX 10.2; the structural
+    /// precondition rank-k ≪ N is checked by the collapser, not here).
+    MatrixInverse { m: RatMatrix, inv: RatMatrix },
+    /// Cholesky as sqrt-free LDLᵀ: `A = L · diag(d) · Lᵀ` checked **exactly** over ℚ,
+    /// and SPD confirmed by `d[i] > 0` for all i. Non-SPD is refused by the collapser.
+    LdltSpd {
+        a: RatMatrix,
+        l: RatMatrix,
+        d: Vec<BigRational>,
+    },
+    /// Strassen product verified by **exact** Freivalds over ℤ: for each recorded
+    /// {0,1} vector `x`, `C·x = A·(B·x)`. `r` recorded rounds bound the false-accept
+    /// probability by `2^-r` (Freivalds' lemma over an integral domain). Matrices are
+    /// row-major `dim × dim`.
+    FreivaldsProduct {
+        a: Vec<BigInt>,
+        b: Vec<BigInt>,
+        c: Vec<BigInt>,
+        dim: usize,
+        seeds: Vec<Vec<u8>>,
+    },
+    /// Float residual certificate with an **explicit tolerance** (the discipline for
+    /// approximate kernels): the claimed inverse `inv` of `m` satisfies
+    /// `‖m·inv − I‖∞ ≤ tol`. Soundness is *relative to* `tol` (stated, not hidden).
+    FloatResidual {
+        m: Vec<f64>,
+        inv: Vec<f64>,
+        dim: usize,
+        tol: f64,
+    },
 }
 
 /// A small captured GF(2) linear circuit so the GF(2) certificate is self-contained
@@ -232,7 +267,7 @@ pub mod gf2circuit {
 
 /// A certificate: self-contained (R16) — source, collapsed form, obligation,
 /// evidence, boundaries, and a fallback that always equals the source.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Certificate {
     /// `Cow<'static, str>` (DR6 representational note): keeps `&'static str`
     /// ergonomics (`CollapserId.into()`) while still deserializing for cert-replay.
@@ -296,7 +331,7 @@ pub trait Checker {
 ///     VerifiedCertificate(c) // ERROR: cannot construct — field is private
 /// }
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VerifiedCertificate(Certificate);
 
 impl VerifiedCertificate {
@@ -321,7 +356,7 @@ pub fn verify_with(c: Certificate, checker: &dyn Checker) -> Option<VerifiedCert
 /// A collapsed program fragment: a sublinear/closed residual plus the verified
 /// certificate proving it equivalent to the source. Cannot be built without a
 /// `VerifiedCertificate` (P0/P2).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Collapsed {
     pub residual: IrRef,
     cert: VerifiedCertificate,

@@ -10,6 +10,8 @@ jeff-span = { workspace = true }
 jeff-math = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+num-bigint = { workspace = true }
+num-rational = { workspace = true }
 
 [lints]
 workspace = true
