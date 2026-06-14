@@ -57,6 +57,27 @@ pub enum BarrierTag {
     /// but no known polynomial algorithm recovers it (spiked tensor √p≲β≲p^{3/4};
     /// low-degree / SoS lower bounds). Conjectural hardness ⇒ defer, class `open`.
     StatComputationalGap,
+    /// A Boolean function has no low-degree Fourier concentration (PARITY's mass is all
+    /// at degree n; high noise sensitivity): low-degree / decision-tree learning cannot
+    /// compress it (LMN / Bshouty–Tamon).
+    NoLowDegreeConcentration,
+
+    // ---- Stage 6A barrier-table floors (impossibility witnesses, never collapses) ----
+    /// Approximate degree `deg̃(f) = Ω(N)` ⇒ Ω(N) queries necessary (Beals–Buhrman–Cleve–
+    /// Mosca–de Wolf 1998): no sublinear evaluation. e.g. PARITY (`deg̃ = N`).
+    SensitivityDegreeFloor,
+    /// Constant-depth circuits for PARITY need `2^{Ω(n^{1/(d−1)})}` size (Håstad switching
+    /// lemma): no small low-depth circuit.
+    CircuitDepthFloor,
+    /// Quantum query lower bound `Q(f) = Θ(Adv±(f))` (Ambainis adversary / Reichardt):
+    /// no quantum-query speedup beyond the adversary bound.
+    QuantumQueryFloor,
+    /// Landauer thermodynamic floor: ≥ kT ln 2 per erased bit (Landauer 1961; verified
+    /// Bérut et al. 2012) — an energy floor, not a time speedup.
+    LandauerThermoFloor,
+    /// Bekenstein information-density bound (1981): a physical floor on information per
+    /// unit energy·radius — not collapsible.
+    BekensteinPhysicalFloor,
 }
 
 impl BarrierTag {
@@ -83,6 +104,12 @@ impl BarrierTag {
             BelowDetectionThreshold => "below-detection-threshold",
             HighIntrinsicDimension => "high-intrinsic-dimension",
             StatComputationalGap => "stat-computational-gap",
+            NoLowDegreeConcentration => "no-low-degree-concentration",
+            SensitivityDegreeFloor => "sensitivity-degree-floor",
+            CircuitDepthFloor => "circuit-depth-floor",
+            QuantumQueryFloor => "quantum-query-floor",
+            LandauerThermoFloor => "landauer-thermo-floor",
+            BekensteinPhysicalFloor => "bekenstein-physical-floor",
         }
     }
 
@@ -109,6 +136,12 @@ impl BarrierTag {
             BelowDetectionThreshold => "BBP 2005 / KS / Johnson radius — signal below detectability",
             HighIntrinsicDimension => "intrinsic dimension ≈ ambient; no low-rank/manifold structure",
             StatComputationalGap => "low-degree/SoS lower bounds — conjectured no efficient algorithm",
+            NoLowDegreeConcentration => "Linial–Mansour–Nisan / Bshouty–Tamon — no low-degree concentration",
+            SensitivityDegreeFloor => "BBCMdW 1998 — deg̃(f)=Ω(N) ⇒ Ω(N) queries",
+            CircuitDepthFloor => "Håstad 1986 switching lemma — AC0 size lower bound",
+            QuantumQueryFloor => "Ambainis 2002 / Reichardt 2009 — adversary bound",
+            LandauerThermoFloor => "Landauer 1961; Bérut et al. 2012 — kT ln2 per erased bit",
+            BekensteinPhysicalFloor => "Bekenstein 1981 — physical information-density bound",
         }
     }
 
@@ -154,6 +187,16 @@ impl BarrierTag {
             StatComputationalGap => {
                 "signal present but in the statistical-to-computational gap; no efficient algorithm (open)"
             }
+            NoLowDegreeConcentration => {
+                "no low-degree Fourier concentration (e.g. PARITY); low-degree learning cannot compress this"
+            }
+            SensitivityDegreeFloor => {
+                "approximate degree is Ω(N); Ω(N) queries are necessary (no sublinear evaluation)"
+            }
+            CircuitDepthFloor => "constant-depth circuit size lower bound (Håstad); no small AC0 circuit",
+            QuantumQueryFloor => "quantum query lower bound (adversary); no further query speedup",
+            LandauerThermoFloor => "energy floor kT ln2 per erased bit; not a time speedup",
+            BekensteinPhysicalFloor => "physical information-density floor; not collapsible",
         }
     }
 

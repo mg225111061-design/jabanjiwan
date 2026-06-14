@@ -881,6 +881,78 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+
+            // ---- Batch 6: property testing / Fourier learning ----
+            Evidence::HeavyFourier { table, theta, coeffs } => {
+                if theta.is_nan() || coeffs.is_empty() {
+                    return VerifyResult::Invalid;
+                }
+                let fhat = jeff_math::fourier::walsh_hadamard(table);
+                for &s in coeffs {
+                    if s >= fhat.len() || fhat[s].abs() < *theta {
+                        return VerifyResult::Invalid;
+                    }
+                }
+                VerifyResult::Valid
+            }
+            Evidence::LowDegree { table, k, tail_bound } => {
+                if tail_bound.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let fhat = jeff_math::fourier::walsh_hadamard(table);
+                if jeff_math::fourier::low_degree_tail(&fhat, *k) <= *tail_bound {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::Linearity { table, eps } => {
+                if eps.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let fhat = jeff_math::fourier::walsh_hadamard(table);
+                if jeff_math::fourier::distance_to_linear(&fhat) <= *eps {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::Junta { table, num_vars, relevant, j, floor } => {
+                if floor.is_nan() || relevant.len() > *j {
+                    return VerifyResult::Invalid;
+                }
+                let fhat = jeff_math::fourier::walsh_hadamard(table);
+                let actual = jeff_math::fourier::relevant_variables(&fhat, *num_vars, *floor);
+                // every influential coordinate must be in the claimed relevant set.
+                if actual.iter().all(|v| relevant.contains(v)) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::ListDecode { xs, ys, q, k, coeffs, tau } => {
+                if xs.len() != ys.len() || coeffs.len() > *k || xs.is_empty() {
+                    return VerifyResult::Invalid;
+                }
+                // EXACT: the polynomial agrees on ≥ n − tau positions.
+                let agree = jeff_math::fourier::agreement_count(coeffs, xs, ys, *q);
+                if agree >= xs.len() - *tau {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::NoiseSensitivity { table, rho, ns_bound } => {
+                if rho.is_nan() || ns_bound.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let fhat = jeff_math::fourier::walsh_hadamard(table);
+                if jeff_math::fourier::noise_sensitivity(&fhat, *rho) <= *ns_bound {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -942,7 +1014,13 @@ impl Checker for DefaultRegistry {
             | Evidence::CountMinQuery { .. }
             | Evidence::DistinctCount { .. }
             | Evidence::HeavyHitters { .. }
-            | Evidence::SublinearMean { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::SublinearMean { .. }
+            | Evidence::HeavyFourier { .. }
+            | Evidence::LowDegree { .. }
+            | Evidence::Linearity { .. }
+            | Evidence::Junta { .. }
+            | Evidence::ListDecode { .. }
+            | Evidence::NoiseSensitivity { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -996,6 +1074,12 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::DistinctCount { .. } => "hll-vs-exact",
         Evidence::HeavyHitters { .. } => "heavy-hitter-exact",
         Evidence::SublinearMean { .. } => "mean-vs-exact",
+        Evidence::HeavyFourier { .. } => "wht-heavy-coeff",
+        Evidence::LowDegree { .. } => "wht-low-degree-tail",
+        Evidence::Linearity { .. } => "wht-blr-distance",
+        Evidence::Junta { .. } => "wht-influence-junta",
+        Evidence::ListDecode { .. } => "rs-agreement-exact",
+        Evidence::NoiseSensitivity { .. } => "wht-noise-sensitivity",
     }
 }
 
@@ -1516,6 +1600,31 @@ mod tests {
         // Count-Min never underestimates; a claimed estimate below the truth is invalid.
         let items = vec![3u64; 100];
         let ev = Evidence::CountMinQuery { items, key: 3, estimate: 50, eps: 0.01 };
+        assert!(verify(cert(ev)).is_none());
+    }
+
+    // ===== Stage 6A Batch 6: property-testing / Fourier certificates =====
+
+    #[test]
+    fn listdecode_valid_and_false_rejected() {
+        let q = 97;
+        let p = vec![3u64, 2, 1];
+        let xs: Vec<u64> = (1..=7).collect();
+        let ys: Vec<u64> = xs.iter().map(|&x| jeff_math::fourier::poly_eval_mod(&p, x, q)).collect();
+        // exact codeword agrees everywhere → valid
+        let ev = Evidence::ListDecode { xs: xs.clone(), ys: ys.clone(), q, k: 3, coeffs: p, tau: 2 };
+        assert_eq!(ev.cert_class(), jeff_cert::CertClass::Exact);
+        assert!(verify(cert(ev)).is_some());
+        // a wrong polynomial agrees on too few points → rejected
+        let bad = Evidence::ListDecode { xs, ys, q, k: 3, coeffs: vec![0, 0, 0], tau: 2 };
+        assert!(verify(cert(bad)).is_none());
+    }
+
+    #[test]
+    fn parity_low_degree_claim_rejected() {
+        // PARITY (mass at degree 2) cannot satisfy a degree-1 low-degree claim.
+        let parity = vec![1.0, -1.0, -1.0, 1.0];
+        let ev = Evidence::LowDegree { table: parity, k: 1, tail_bound: 0.1 };
         assert!(verify(cert(ev)).is_none());
     }
 

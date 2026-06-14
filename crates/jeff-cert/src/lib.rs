@@ -578,6 +578,51 @@ pub enum Evidence {
         estimate: f64,
         lambda: f64,
     },
+
+    // ---- Stage 6A Batch 6: property testing / Fourier learning ----
+    /// 6.1 Heavy Fourier coefficients of a `±1` truth `table`. Checker recomputes the
+    /// Walsh–Hadamard spectrum and verifies each reported `S` has `|f̂(S)| ≥ theta`.
+    HeavyFourier {
+        table: Vec<f64>,
+        theta: f64,
+        coeffs: Vec<usize>,
+    },
+    /// 6.2 Low-degree concentration: high-degree mass `Σ_{|S|>k} f̂(S)² ≤ tail_bound`.
+    LowDegree {
+        table: Vec<f64>,
+        k: usize,
+        tail_bound: f64,
+    },
+    /// 6.3 Linearity (BLR): distance to the nearest character ≤ `eps`.
+    Linearity {
+        table: Vec<f64>,
+        eps: f64,
+    },
+    /// 6.4 Junta: the function depends only on `relevant` coordinates (|relevant| ≤ j);
+    /// all coordinates with influence above `floor` are in the set.
+    Junta {
+        table: Vec<f64>,
+        num_vars: usize,
+        relevant: Vec<usize>,
+        j: usize,
+        floor: f64,
+    },
+    /// 6.5 List/unique decoding: `coeffs` (deg < k) agrees with the received word
+    /// `(xs, ys)` over GF(`q`) on ≥ `n − tau` positions (exact agreement check).
+    ListDecode {
+        xs: Vec<u64>,
+        ys: Vec<u64>,
+        q: u64,
+        k: usize,
+        coeffs: Vec<u64>,
+        tau: usize,
+    },
+    /// 6.6 Noise sensitivity `NS_ρ(f) ≤ ns_bound` (low ⇒ degree concentration).
+    NoiseSensitivity {
+        table: Vec<f64>,
+        rho: f64,
+        ns_bound: f64,
+    },
 }
 
 impl Evidence {
@@ -652,6 +697,14 @@ impl Evidence {
             | Evidence::DistinctCount { .. }
             | Evidence::HeavyHitters { .. }
             | Evidence::SublinearMean { .. } => CertClass::EpsApproximate,
+            // Batch 6: property testers are high-probability detectors; list decoding is
+            // an exact agreement check.
+            Evidence::ListDecode { .. } => CertClass::Exact,
+            Evidence::HeavyFourier { .. }
+            | Evidence::LowDegree { .. }
+            | Evidence::Linearity { .. }
+            | Evidence::Junta { .. }
+            | Evidence::NoiseSensitivity { .. } => CertClass::HighProbability,
         }
     }
 }

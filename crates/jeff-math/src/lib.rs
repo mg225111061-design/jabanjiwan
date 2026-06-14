@@ -11,6 +11,7 @@
 
 pub mod complex;
 pub mod fmat;
+pub mod fourier;
 pub mod frame;
 pub mod geometry;
 pub mod gf2;
