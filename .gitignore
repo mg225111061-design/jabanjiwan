@@ -4,3 +4,5 @@
 *.o
 /tmp
 Cargo.lock.bak
+/jeff-stage0.bundle
+/patches/
