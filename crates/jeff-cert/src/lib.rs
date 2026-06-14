@@ -142,6 +142,39 @@ pub struct SamplePoint {
     pub var_names: Vec<String>,
 }
 
+/// Certificate class (Stage-6 standing rule, PART A). Exactly one per certificate; it
+/// is a property of the certificate's *nature*, never of effort. Advertising a
+/// non-`Exact` certificate as `Exact` is a P1 honesty violation. `Open` = "no
+/// machine-checkable proof exists yet" — usable as a heuristic but flagged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CertClass {
+    /// Exact identity / exact replay (Cholesky, NTT, Gosper, Barvinok, ETF, list decode).
+    Exact,
+    /// Holds under the Restricted Isometry Property (random measurement matrices).
+    RipConditional,
+    /// Holds with high probability under a sampling/incoherence assumption.
+    HighProbability,
+    /// Residual ≤ tol against the exact oracle; correctness is *relative to* the stated tol.
+    EpsApproximate,
+    /// Holds above a proven detectability/separation threshold (BBP, KS, Johnson, Δ≥2/f_c).
+    ThresholdConditional,
+    /// No machine-checkable proof yet (e.g. RIP of an arbitrary matrix is NP-hard).
+    Open,
+}
+
+impl CertClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CertClass::Exact => "exact",
+            CertClass::RipConditional => "RIP-conditional",
+            CertClass::HighProbability => "high-probability",
+            CertClass::EpsApproximate => "eps-approximate",
+            CertClass::ThresholdConditional => "threshold-conditional",
+            CertClass::Open => "open",
+        }
+    }
+}
+
 /// Evidence kinds and their checker routing (PART 6.1, APPENDIX F.6):
 /// * `PolynomialIdentity` → Poly coeff-zero (F.1/F.4/F.5)
 /// * `Telescoper`         → poly identity (F.2) | Lean operator induction (stub)
@@ -290,6 +323,113 @@ pub enum Evidence {
         n_lo: i64,
         n_hi: i64,
     },
+
+    // ---- Stage 6A Batch 1: sparse / low-rank recovery (cert = residual vs oracle) ----
+    /// 1.1 Compressed sensing: claimed k-sparse `x` with `Φx≈y`. Checker recomputes
+    /// `‖Φx−y‖₂ ≤ tol` AND `‖x‖₀ ≤ k`. `Φ` is row-major `rows×cols`.
+    SparseRecovery {
+        phi: Vec<f64>,
+        rows: usize,
+        cols: usize,
+        y: Vec<f64>,
+        x: Vec<f64>,
+        k: usize,
+        tol: f64,
+        /// random measurement matrix ⇒ RIP-conditional; otherwise the RIP is `open`.
+        random_phi: bool,
+    },
+    /// 1.2 Sparse FFT: claimed k-sparse spectrum `support`. Checker inverse-DFTs it and
+    /// verifies `‖signal − F⁻¹ŷ‖₂ ≤ tol·‖signal‖₂` AND `|support| ≤ k`.
+    SparseSpectrum {
+        signal: Vec<f64>,
+        support: Vec<(usize, f64, f64)>,
+        n: usize,
+        k: usize,
+        tol: f64,
+    },
+    /// 1.3 Matrix completion: factors `u (rows×r)`, `v (cols×r)` (row-major). Checker
+    /// recomputes `(UVᵀ)_{ij}` on observed `Ω` and verifies residual ≤ tol AND rank ≤ r.
+    MatrixCompletion {
+        observed: Vec<(usize, usize, f64)>,
+        u: Vec<f64>,
+        v: Vec<f64>,
+        rows: usize,
+        cols: usize,
+        r: usize,
+        tol: f64,
+    },
+    /// 1.4 Prony: claimed degree-k recurrence `a` (len k+1, `a_k=1`). Checker verifies
+    /// `max_t|Σ a_i s_{t+i}| ≤ tol` (the samples are a sum of ≤k exponentials).
+    PronyRecurrence {
+        samples: Vec<f64>,
+        a: Vec<f64>,
+        tol: f64,
+    },
+    /// 1.5 Super-resolution: claimed spikes `(t_j, amp_re, amp_im)` from low-pass
+    /// Fourier data `lowpass` (re,im per index). Checker re-evaluates the spike model at
+    /// every Fourier index (residual ≤ tol) AND verifies min separation ≥ `2/fc`.
+    SuperResolution {
+        lowpass: Vec<(f64, f64)>,
+        spikes: Vec<(f64, f64, f64)>,
+        fc: usize,
+        tol: f64,
+    },
+    /// 1.6 Equiangular tight frame: `frame` row-major `m×n`. Checker recomputes the
+    /// normalized Gram and verifies every off-diagonal magnitude = Welch bound ±tol.
+    EquiangularTightFrame {
+        frame: Vec<f64>,
+        m: usize,
+        n: usize,
+        tol: f64,
+    },
+}
+
+impl Evidence {
+    /// The certificate class for this evidence — derived from the evidence *kind* and
+    /// its honest instance qualifiers (not freely set by the caller). Mislabeling is a
+    /// P1 violation, so the class is computed here, in one place.
+    pub fn cert_class(&self) -> CertClass {
+        const EXACT_EPS: f64 = 1e-9;
+        match self {
+            // Stage 0–5: exact identities / exact replay.
+            Evidence::PolynomialIdentity { .. }
+            | Evidence::Telescoper { .. }
+            | Evidence::Gf2LinearIdentity { .. }
+            | Evidence::EigenCharpoly { .. }
+            | Evidence::NumericResidual { .. }
+            | Evidence::PfaffianHolant { .. }
+            | Evidence::MatrixInverse { .. }
+            | Evidence::LdltSpd { .. }
+            | Evidence::FreivaldsProduct { .. }
+            | Evidence::LatticeCount { .. } => CertClass::Exact,
+            // Stage 3 approximate kernels: residual ≤ explicit tol.
+            Evidence::FloatResidual { .. }
+            | Evidence::LowRankResidual { .. }
+            | Evidence::FmmResidual { .. }
+            | Evidence::LinSolveResidual { .. }
+            | Evidence::SinkhornPlan { .. } => CertClass::EpsApproximate,
+            Evidence::AreStabilizing { .. } => CertClass::ThresholdConditional,
+            // Batch 1.
+            Evidence::SparseRecovery { random_phi, .. } => {
+                if *random_phi {
+                    CertClass::RipConditional
+                } else {
+                    CertClass::Open
+                }
+            }
+            Evidence::SparseSpectrum { .. } => CertClass::EpsApproximate,
+            Evidence::MatrixCompletion { .. } => CertClass::HighProbability,
+            Evidence::PronyRecurrence { tol, .. } => {
+                if *tol <= EXACT_EPS {
+                    CertClass::Exact
+                } else {
+                    CertClass::EpsApproximate
+                }
+            }
+            Evidence::SuperResolution { .. } => CertClass::ThresholdConditional,
+            Evidence::EquiangularTightFrame { .. } => CertClass::Exact,
+        }
+    }
 }
 
 /// A small captured GF(2) linear circuit so the GF(2) certificate is self-contained

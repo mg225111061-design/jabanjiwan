@@ -37,6 +37,22 @@ pub enum BarrierTag {
     MemoryHard,
     /// CTC / nonlinear-QM-on-classical / wormhole — rejected (PART 18).
     PhysicsCounterfactual,
+
+    // ---- Stage 6 hidden-structure barriers (the structure was looked for and not
+    // found at runtime — "no structure ⇒ defer", never "no structure ⇒ wrong answer") ----
+    /// Signal/vector is not k-sparse in any tried basis (compressed sensing, sparse
+    /// FFT, frequent-items): residual stays large, no support of size ≤ k explains it.
+    NonSparse,
+    /// Spectrum / frequency vector is flat (white-noise-like): every bin/coordinate is
+    /// comparable, so heavy-coefficient / clustering / coherence structure is absent.
+    FlatSpectrum,
+    /// A signal is present only above a proven detectability threshold (BBP spike edge,
+    /// KS community threshold, Johnson list-decoding radius, super-resolution
+    /// separation, persistence band) and this instance is below it.
+    BelowDetectionThreshold,
+    /// Intrinsic dimension ≈ ambient (matrix completion / manifold / diffusion): no
+    /// low-dimensional structure to exploit, so no compression is possible.
+    HighIntrinsicDimension,
 }
 
 impl BarrierTag {
@@ -58,6 +74,10 @@ impl BarrierTag {
             ConstantFactorOnly => "constant-factor-only",
             MemoryHard => "memory-hard",
             PhysicsCounterfactual => "physics-counterfactual",
+            NonSparse => "non-sparse",
+            FlatSpectrum => "flat-spectrum",
+            BelowDetectionThreshold => "below-detection-threshold",
+            HighIntrinsicDimension => "high-intrinsic-dimension",
         }
     }
 
@@ -79,6 +99,10 @@ impl BarrierTag {
             ConstantFactorOnly => "Ω(N) floor; no asymptotic collapse",
             MemoryHard => "Argon2 / RFC 9106 — memory-hardness is the design goal",
             PhysicsCounterfactual => "conservation laws + physical realizability (PART 18)",
+            NonSparse => "Candès–Tao 2005 — exact recovery needs k-sparsity (δ_2k<√2−1)",
+            FlatSpectrum => "Welch 1974 — flat/high-coherence spectrum has no heavy structure",
+            BelowDetectionThreshold => "BBP 2005 / KS / Johnson radius — signal below detectability",
+            HighIntrinsicDimension => "intrinsic dimension ≈ ambient; no low-rank/manifold structure",
         }
     }
 
@@ -109,6 +133,18 @@ impl BarrierTag {
             }
             MemoryHard => "memory-hard by design (e.g., Argon2); not collapsible — that is the point",
             PhysicsCounterfactual => "physics-counterfactual construction; rejected (see PART 18)",
+            NonSparse => {
+                "not k-sparse in any tried basis; sparse recovery cannot collapse this (no speedup)"
+            }
+            FlatSpectrum => {
+                "spectrum is flat / high-coherence; no heavy coefficients to exploit — fall back to dense"
+            }
+            BelowDetectionThreshold => {
+                "signal is below the proven detectability threshold; cannot certify recovery — deferred"
+            }
+            HighIntrinsicDimension => {
+                "intrinsic dimension ≈ ambient; no low-rank/manifold structure to compress"
+            }
         }
     }
 

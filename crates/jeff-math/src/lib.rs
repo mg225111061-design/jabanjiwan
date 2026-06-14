@@ -9,7 +9,9 @@
 //! Licensing (R5 / D9): arbitrary precision via `num-bigint`/`num-rational`
 //! (MIT/Apache), never GMP/`rug` (LGPL).
 
+pub mod complex;
 pub mod fmat;
+pub mod frame;
 pub mod gf2;
 pub mod hyper;
 pub mod lattice;
@@ -20,6 +22,8 @@ pub mod nbody;
 pub mod ot;
 pub mod poly;
 pub mod pqc;
+pub mod prony;
+pub mod recovery;
 pub mod ratfun;
 pub mod riccati;
 

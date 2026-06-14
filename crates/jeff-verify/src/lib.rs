@@ -481,6 +481,147 @@ impl Checker for KernelChecker {
                 }
                 VerifyResult::Valid
             }
+
+            // ---- Batch 1: independent residual recompute against the exact oracle ----
+            Evidence::SparseRecovery {
+                phi,
+                rows,
+                cols,
+                y,
+                x,
+                k,
+                tol,
+                ..
+            } => {
+                if phi.len() != rows * cols || y.len() != *rows || x.len() != *cols || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                // ‖Φx − y‖₂ recomputed independently
+                let mut resid2 = 0.0;
+                for i in 0..*rows {
+                    let mut ax = 0.0;
+                    for j in 0..*cols {
+                        ax += phi[i * cols + j] * x[j];
+                    }
+                    let d = ax - y[i];
+                    resid2 += d * d;
+                }
+                let nnz = x.iter().filter(|v| v.abs() > 1e-9).count();
+                if resid2.sqrt() <= *tol && nnz <= *k {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::SparseSpectrum {
+                signal,
+                support,
+                n,
+                k,
+                tol,
+            } => {
+                if signal.len() != *n || support.len() > *k || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                let recon = jeff_math::recovery::idft_sparse(support, *n);
+                let mut resid2 = 0.0;
+                let mut sig2 = 0.0;
+                for t in 0..*n {
+                    let d = signal[t] - recon[t];
+                    resid2 += d * d;
+                    sig2 += signal[t] * signal[t];
+                }
+                if resid2.sqrt() <= *tol * sig2.sqrt() {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::MatrixCompletion {
+                observed,
+                u,
+                v,
+                rows,
+                cols,
+                r,
+                tol,
+            } => {
+                if u.len() != rows * r || v.len() != cols * r || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                // residual on observed entries: (UVᵀ)_{ij} recomputed
+                let mut resid2 = 0.0;
+                for &(i, j, val) in observed {
+                    if i >= *rows || j >= *cols {
+                        return VerifyResult::Invalid;
+                    }
+                    let mut e = 0.0;
+                    for l in 0..*r {
+                        e += u[i * r + l] * v[j * r + l];
+                    }
+                    let d = e - val;
+                    resid2 += d * d;
+                }
+                if resid2.sqrt() <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::PronyRecurrence { samples, a, tol } => {
+                if a.len() < 2 || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                // a_k must be normalized to 1 and the recurrence must hold within tol.
+                if (a[a.len() - 1] - 1.0).abs() > 1e-9 {
+                    return VerifyResult::Invalid;
+                }
+                if jeff_math::prony::recurrence_residual(samples, a) <= *tol {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::SuperResolution {
+                lowpass,
+                spikes,
+                fc,
+                tol,
+            } => {
+                use jeff_math::complex::Complex;
+                if lowpass.len() != 2 * fc + 1 || tol.is_nan() || *fc == 0 {
+                    return VerifyResult::Invalid;
+                }
+                let model: Vec<(f64, Complex)> = spikes
+                    .iter()
+                    .map(|&(t, re, im)| (t, Complex::new(re, im)))
+                    .collect();
+                // residual: re-evaluate the spike model at every Fourier index
+                let mut worst = 0.0_f64;
+                for (m, &(re, im)) in lowpass.iter().enumerate() {
+                    let got = jeff_math::prony::eval_spike_model(&model, m);
+                    worst = worst.max(got.sub(Complex::new(re, im)).abs());
+                }
+                // separation must meet the Δ ≥ 2/f_c threshold (Candès–FG 2014)
+                let locs: Vec<f64> = spikes.iter().map(|s| s.0).collect();
+                let sep = jeff_math::prony::min_circular_separation(&locs);
+                let threshold = 2.0 / *fc as f64;
+                if worst <= *tol && sep >= threshold {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            Evidence::EquiangularTightFrame { frame, m, n, tol } => {
+                if frame.len() != m * n || *m <= *n || tol.is_nan() {
+                    return VerifyResult::Invalid;
+                }
+                if jeff_math::frame::is_etf(frame, *m, *n, *tol) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -514,7 +655,13 @@ impl Checker for DefaultRegistry {
             | Evidence::LinSolveResidual { .. }
             | Evidence::SinkhornPlan { .. }
             | Evidence::AreStabilizing { .. }
-            | Evidence::LatticeCount { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::LatticeCount { .. }
+            | Evidence::SparseRecovery { .. }
+            | Evidence::SparseSpectrum { .. }
+            | Evidence::MatrixCompletion { .. }
+            | Evidence::PronyRecurrence { .. }
+            | Evidence::SuperResolution { .. }
+            | Evidence::EquiangularTightFrame { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -540,6 +687,12 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::SinkhornPlan { .. } => "sinkhorn-marginal-tol",
         Evidence::AreStabilizing { .. } => "care-stabilizing-psd",
         Evidence::LatticeCount { .. } => "lattice-sample-exact",
+        Evidence::SparseRecovery { .. } => "sparse-residual-l0",
+        Evidence::SparseSpectrum { .. } => "sparsefft-residual-tol",
+        Evidence::MatrixCompletion { .. } => "completion-residual-tol",
+        Evidence::PronyRecurrence { .. } => "prony-recurrence-exact",
+        Evidence::SuperResolution { .. } => "superres-model-residual",
+        Evidence::EquiangularTightFrame { .. } => "welch-etf-exact",
     }
 }
 
@@ -712,6 +865,203 @@ mod tests {
             verify(cert(ev)).is_none(),
             "a tampered NTT result must be rejected by the schoolbook checker"
         );
+    }
+
+    // ===== Stage 6A Batch 1: sparse / low-rank recovery certificates =====
+
+    #[test]
+    fn sparse_recovery_verifies_and_rejects() {
+        use jeff_math::recovery::{apply, omp};
+        let m = 12;
+        let n = 24;
+        let phi = jeff_math::fmat::gaussian_matrix(m, n, 0xABCDEF);
+        let mut x = vec![0.0; n];
+        x[2] = 3.0;
+        x[7] = -1.5;
+        x[19] = 2.0;
+        let y = apply(&phi, &x);
+        let xr = omp(&phi, &y, 3);
+        let phi_flat: Vec<f64> = (0..m)
+            .flat_map(|i| (0..n).map(move |j| (i, j)))
+            .map(|(i, j)| phi.get(i, j))
+            .collect();
+        let ev = Evidence::SparseRecovery {
+            phi: phi_flat.clone(),
+            rows: m,
+            cols: n,
+            y: y.clone(),
+            x: xr,
+            k: 3,
+            tol: 1e-6,
+            random_phi: true,
+        };
+        assert_eq!(ev.cert_class(), jeff_cert::CertClass::RipConditional);
+        assert!(verify(cert(ev)).is_some());
+
+        // tripwire: a wrong (dense / off-support) x must be rejected
+        let bad = Evidence::SparseRecovery {
+            phi: phi_flat,
+            rows: m,
+            cols: n,
+            y,
+            x: vec![1.0; n], // dense, won't satisfy Φx≈y
+            k: 3,
+            tol: 1e-6,
+            random_phi: true,
+        };
+        assert!(verify(cert(bad)).is_none(), "residual-over-tol must be rejected");
+    }
+
+    #[test]
+    fn sparse_spectrum_verifies_and_rejects() {
+        use jeff_math::recovery::sparse_fft;
+        let n = 32;
+        let two_pi = std::f64::consts::TAU;
+        let x: Vec<f64> = (0..n)
+            .map(|t| (two_pi * 3.0 * t as f64 / n as f64).cos())
+            .collect();
+        let support = sparse_fft(&x, 2);
+        let ev = Evidence::SparseSpectrum {
+            signal: x.clone(),
+            support: support.clone(),
+            n,
+            k: 2,
+            tol: 1e-6,
+        };
+        assert!(verify(cert(ev)).is_some());
+        // tripwire: corrupt a coefficient → residual blows past tol
+        let mut bad_support = support;
+        bad_support[0].1 += 5.0;
+        let bad = Evidence::SparseSpectrum {
+            signal: x,
+            support: bad_support,
+            n,
+            k: 2,
+            tol: 1e-6,
+        };
+        assert!(verify(cert(bad)).is_none());
+    }
+
+    #[test]
+    fn matrix_completion_verifies_and_rejects() {
+        use jeff_math::recovery::complete;
+        let (rows, cols) = (8, 8);
+        let u: Vec<f64> = (0..rows).map(|i| 1.0 + i as f64 * 0.1).collect();
+        let v: Vec<f64> = (0..cols).map(|j| 2.0 - j as f64 * 0.05).collect();
+        let observed: Vec<(usize, usize, f64)> = (0..rows)
+            .flat_map(|i| (0..cols).map(move |j| (i, j)))
+            .filter(|&(i, j)| (i * 5 + j * 3) % 10 < 7)
+            .map(|(i, j)| (i, j, u[i] * v[j]))
+            .collect();
+        let (uu, vv) = complete(&observed, rows, cols, 1, 40);
+        let uf: Vec<f64> = (0..rows).map(|i| uu.get(i, 0)).collect();
+        let vf: Vec<f64> = (0..cols).map(|j| vv.get(j, 0)).collect();
+        let ev = Evidence::MatrixCompletion {
+            observed: observed.clone(),
+            u: uf,
+            v: vf,
+            rows,
+            cols,
+            r: 1,
+            tol: 1e-3,
+        };
+        assert_eq!(ev.cert_class(), jeff_cert::CertClass::HighProbability);
+        assert!(verify(cert(ev)).is_some());
+        // tripwire: zero factors cannot reproduce nonzero observed entries
+        let bad = Evidence::MatrixCompletion {
+            observed,
+            u: vec![0.0; rows],
+            v: vec![0.0; cols],
+            rows,
+            cols,
+            r: 1,
+            tol: 1e-3,
+        };
+        assert!(verify(cert(bad)).is_none());
+    }
+
+    #[test]
+    fn prony_verifies_and_rejects() {
+        use jeff_math::prony::prony_fit;
+        let s: Vec<f64> = (0..10)
+            .map(|t| 2.0 * 1.5_f64.powi(t) + 3.0 * 0.5_f64.powi(t))
+            .collect();
+        let (a, _) = prony_fit(&s, 2).unwrap();
+        let ev = Evidence::PronyRecurrence {
+            samples: s.clone(),
+            a: a.clone(),
+            tol: 1e-6,
+        };
+        assert!(verify(cert(ev)).is_some());
+        // tripwire: a wrong recurrence does not annihilate the samples
+        let bad = Evidence::PronyRecurrence {
+            samples: s,
+            a: vec![0.5, -0.3, 1.0],
+            tol: 1e-6,
+        };
+        assert!(verify(cert(bad)).is_none());
+    }
+
+    #[test]
+    fn superresolution_verifies_and_rejects() {
+        use jeff_math::complex::Complex;
+        use jeff_math::prony::super_resolve;
+        let true_locs = [0.2_f64, 0.7];
+        let amps = [Complex::new(1.0, 0.0), Complex::new(0.8, 0.0)];
+        let fc = 8usize;
+        let mm = 2 * fc + 1;
+        let two_pi = std::f64::consts::TAU;
+        let lowpass: Vec<Complex> = (0..mm)
+            .map(|m| {
+                let mut acc = Complex::zero();
+                for (k, &t) in true_locs.iter().enumerate() {
+                    acc = acc.add(amps[k].mul(Complex::from_angle(-two_pi * m as f64 * t)));
+                }
+                acc
+            })
+            .collect();
+        let spikes = super_resolve(&lowpass, 2).unwrap();
+        let lp: Vec<(f64, f64)> = lowpass.iter().map(|c| (c.re, c.im)).collect();
+        let sp: Vec<(f64, f64, f64)> = spikes.iter().map(|s| (s.t, s.amp.re, s.amp.im)).collect();
+        let ev = Evidence::SuperResolution {
+            lowpass: lp.clone(),
+            spikes: sp,
+            fc,
+            tol: 1e-6,
+        };
+        assert_eq!(ev.cert_class(), jeff_cert::CertClass::ThresholdConditional);
+        assert!(verify(cert(ev)).is_some());
+        // tripwire: spikes too close together (below 2/fc) must be rejected even if they
+        // happen to fit — the separation threshold is part of the certificate.
+        let close = Evidence::SuperResolution {
+            lowpass: lp,
+            spikes: vec![(0.10, 1.0, 0.0), (0.10 + 0.5 / fc as f64, 0.8, 0.0)],
+            fc,
+            tol: 1e-6,
+        };
+        assert!(verify(cert(close)).is_none());
+    }
+
+    #[test]
+    fn etf_verifies_and_rejects() {
+        use jeff_math::frame::mercedes_benz;
+        let (v, m, n) = mercedes_benz();
+        let ev = Evidence::EquiangularTightFrame {
+            frame: v,
+            m,
+            n,
+            tol: 1e-9,
+        };
+        assert_eq!(ev.cert_class(), jeff_cert::CertClass::Exact);
+        assert!(verify(cert(ev)).is_some());
+        // tripwire: a non-equiangular frame is not an ETF
+        let bad = Evidence::EquiangularTightFrame {
+            frame: vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            m: 3,
+            n: 2,
+            tol: 1e-9,
+        };
+        assert!(verify(cert(bad)).is_none());
     }
 
     // ===== Verifier-integrity tripwires (MIDBUILD_AUDIT §A.1) =====
