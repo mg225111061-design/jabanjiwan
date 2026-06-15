@@ -669,6 +669,16 @@ pub enum Evidence {
         rank: usize,
         eps: f64,
     },
+    /// A discovered D-finite recurrence (Stage 15.1/15.2 discovery side): the nonzero
+    /// integer `operator` (coefficients `c_{i,j}`, `i≤order`, `j≤degree`, row-major) is
+    /// claimed to annihilate `samples` exactly — `Σ_{i,j} c_{i,j}·n^j·a_{n+i} = 0` for all
+    /// evaluation rows. Checker recomputes every row over ℚ and confirms it vanishes.
+    RecurrencePresent {
+        samples: Vec<BigInt>,
+        order: usize,
+        degree: usize,
+        operator: Vec<BigInt>,
+    },
 }
 
 impl Evidence {
@@ -759,6 +769,8 @@ impl Evidence {
             Evidence::RecurrenceAbsence { .. } => CertClass::Exact,
             // Stage 15.3: rank exclusion to spectral tolerance (σ_{r+1} > eps).
             Evidence::RankAbsence { .. } => CertClass::EpsApproximate,
+            // Stage 15.2: exact annihilation of the observed terms by the operator.
+            Evidence::RecurrencePresent { .. } => CertClass::Exact,
         }
     }
 
@@ -837,6 +849,31 @@ pub fn rank_absence_certificate(
              [class=low-rank, theta=(rank<={rank},eps={eps},dims={rows}x{cols})]"
         )),
         evidence: Evidence::RankAbsence { matrix, rows, cols, rank, eps },
+        boundaries: vec![],
+        fallback: src,
+    }
+}
+
+/// Build a discovered-recurrence (presence) certificate (Stage 15.2). Assembles only; the
+/// checker re-verifies that `operator` exactly annihilates `samples` (a wrong operator
+/// fails the gate).
+pub fn recurrence_present_certificate(
+    samples: Vec<BigInt>,
+    order: usize,
+    degree: usize,
+    operator: Vec<BigInt>,
+) -> Certificate {
+    let span = Span::dummy();
+    let src = IrRef::new(0, span);
+    Certificate {
+        collapser_id: "discover/recurrence".into(),
+        source: src,
+        collapsed: IrRef::new(1, span),
+        obligation: Obligation::new(format!(
+            "D-finite operator of order<={order},degree<={degree} annihilates the {} samples [cert-class: exact]",
+            samples.len()
+        )),
+        evidence: Evidence::RecurrencePresent { samples, order, degree, operator },
         boundaries: vec![],
         fallback: src,
     }

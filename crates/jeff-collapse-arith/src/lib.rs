@@ -16,6 +16,7 @@
 //! Nothing here trusts the construction: the polynomial identity is independently
 //! checked, and a wrong closed form fails to verify (DR1/DR7).
 
+pub mod discover;
 pub mod fourier;
 pub mod geometry;
 pub mod gosper;

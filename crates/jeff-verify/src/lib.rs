@@ -1032,6 +1032,30 @@ impl Checker for AbsenceChecker {
     }
 }
 
+/// Discovered-recurrence (presence) checker (Stage 15.2): re-verifies, exactly over ℚ, that
+/// the claimed integer operator annihilates the sequence — independent of the discoverer.
+pub struct RecurrenceChecker;
+
+impl Checker for RecurrenceChecker {
+    fn check(&self, ev: &Evidence, _ob: &Obligation, _b: &[Boundary]) -> VerifyResult {
+        match ev {
+            Evidence::RecurrencePresent { samples, order, degree, operator } => {
+                if operator.iter().all(|c| c.is_zero()) {
+                    return VerifyResult::Invalid;
+                }
+                let op: Vec<BigRational> =
+                    operator.iter().map(|c| BigRational::from(c.clone())).collect();
+                if jeff_math::recurrence::verify_annihilator(samples, *order, *degree, &op) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            _ => VerifyResult::Invalid,
+        }
+    }
+}
+
 /// Routes evidence to the right checker (PART 6.2 / APPENDIX F.6). Implements
 /// [`Checker`] so it plugs straight into `verify_with`.
 pub struct DefaultRegistry;
@@ -1095,6 +1119,7 @@ impl Checker for DefaultRegistry {
             Evidence::RecurrenceAbsence { .. } | Evidence::RankAbsence { .. } => {
                 AbsenceChecker.check(ev, ob, b)
             }
+            Evidence::RecurrencePresent { .. } => RecurrenceChecker.check(ev, ob, b),
         }
     }
 }
@@ -1158,6 +1183,7 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::PlanarMatchings { .. } => "fkt-naive-pm-replay",
         Evidence::RecurrenceAbsence { .. } => "recurrence-exclusion-exact",
         Evidence::RankAbsence { .. } => "rank-gap-absence",
+        Evidence::RecurrencePresent { .. } => "recurrence-annihilation-exact",
     }
 }
 
