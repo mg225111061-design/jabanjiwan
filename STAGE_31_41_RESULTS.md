@@ -152,3 +152,29 @@ structure. Not a new kernel — *knowing which kernel to use and honestly giving
 - Cost `O(n·probes)` ≪ full fit `O(n²·r)` (`meta_selector_cheaper_than_full`). 5 tests:
   `structure_taxonomy_classified`, `probing_dispatches_correct_fold`, `no_structure_certified_absent`,
   `hutchinson_trace_accurate`, `meta_selector_cheaper_than_full`. Workspace green, clippy clean.
+
+---
+
+## §C.37 — Galois radical-absence + SCF cohomology obstruction — **BUILT** (niche / domain-edge)
+
+Twin **impossibility** proofs (prove "no closed form exists", not "couldn't find it"). Certificate:
+**absence (exact unsat)** — every check is a finite integer / finite-enumeration / exact-rational
+decision (no Z3 needed; "unsat" is exactly decidable). Labeled niche (symbolic algebra / algebraic
+topology) per rule 7 — built but not over-valued (outside JEFF's numeric/signal core domain).
+
+**37.1 Galois / Liouville** (`jeff_math::galois`):
+- `x⁵−x−1` radical-absence: Δ = 256(−1)⁵+3125(−1)⁴ = **2869** (not a perfect square ⇒ Gal ⊄ A₅) +
+  **A₅ simple** by the conjugacy-class-sum test (no `1 + subset of {15,20,12,12}` strictly between 1
+  and 60 divides 60) ⇒ Gal = S₅ unsolvable ⇒ **no radical solution**.
+- `erf` (∫e^{−x²}) elementary-absence via Liouville: `R'−2xR=1` has no rational R — the odd
+  coefficient ladder `a_{k+2}=2a_k/(k+2)` (computed exactly over ℚ) never terminates ⇒ no
+  polynomial; pole argument rules out the rest. Tests: `quintic_radical_absence_via_unsat`,
+  `a5_simple_conjugacy_unsat`, `erf_elementary_absence_via_unsat`, `liouville_no_rational_r` (+2) (6).
+
+**37.2 cohomology obstruction** (`jeff_math::cohomology`):
+- 3 sensors on S¹, each +120° relative → holonomy 360° ≠ 0 ⇒ **ungluable** (no global section); the
+  unsat is exact (`Σ g_ij = 0` is necessary by telescoping, `Σ = 360 ≠ 0` is a direct contradiction).
+  `H¹(S¹) ≅ ℝ` (dim 1) via Euler characteristic `b₁=|E|−|V|+comp` and via exact incidence rank
+  (3-cycle δ⁰ rank 2 ⇒ H¹ = 3−2 = 1). Generalizes to n-sensor nerve graphs. Tests:
+  `sensor_gluing_obstruction_h1_nonzero`, `holonomy_360_obstruction`, `gluing_unsat_proven`,
+  `nerve_b1_generalizes` (4). Workspace green, clippy clean, verifier 49/0.

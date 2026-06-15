@@ -12,12 +12,14 @@
 pub mod anytime;
 pub mod bbp;
 pub mod cfinite;
+pub mod cohomology;
 pub mod complex;
 pub mod dilithium;
 pub mod displacement;
 pub mod expfit;
 pub mod fft;
 pub mod fmat;
+pub mod galois;
 pub mod fourier;
 pub mod frame;
 pub mod geometry;
