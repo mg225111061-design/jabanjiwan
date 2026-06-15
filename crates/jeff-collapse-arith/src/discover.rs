@@ -446,7 +446,7 @@ mod tests {
     fn floor_reached_emits_certificate() {
         // Stage 16.5: a genuinely structureless input sits on the floor — JEFF pays Ω(N) and
         // the absence certificate proves that is optimal (up to the class, Θ). No fabrication.
-        let mut x = 0xF100_0F100_u64.wrapping_mul(0x9E37_79B9);
+        let mut x = 0x0F10_0F10_0F10_0F10u64.wrapping_mul(0x9E37_79B9);
         let s: Vec<BigInt> = (0..44)
             .map(|_| {
                 x ^= x << 13;
@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn cached_fold_recognized_cheaply() {
         // Second encounter ≥100× faster than rediscovery (O(1) lookup vs exact rref).
-        let mut x = 0x0BADC0DE_F00D_1234u64;
+        let mut x = 0x0BAD_C0DE_F00D_1234u64;
         let s: Vec<BigInt> = (0..40)
             .map(|_| {
                 x ^= x << 13;
