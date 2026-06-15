@@ -19,6 +19,7 @@ pub mod measure;
 pub mod parallel;
 pub mod simd;
 pub mod spacetime;
+pub mod spacetime16;
 
 pub use cost::CostWeights;
 pub use measure::{amdahl_speedup, BenchResult, Timer};
