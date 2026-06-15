@@ -409,11 +409,32 @@ pub fn decaps_with(dk: &[u8], c: &[u8], p: &KemParams) -> [u8; 32] {
     zc.extend_from_slice(c);
     let k_bar = j(&zc);
     let c2 = kpke_encrypt(ek, &m2, &r2, p);
-    if c == c2.as_slice() {
-        k2
-    } else {
-        k_bar
+    // v2-B constant-time FO check: full-length compare (no short-circuit) + masked select, so the
+    // timing/branch does not leak the secret-derived re-encryption result (FIPS 203 implicit
+    // rejection must be data-oblivious). Output is identical to `if c==c2 {k2} else {k_bar}`.
+    let eq = ct_eq(c, &c2);
+    ct_select(eq, &k2, &k_bar)
+}
+
+/// Constant-time byte-slice equality → `0xFF` (equal) / `0x00` (not), comparing **all** bytes
+/// (no early exit). Lengths are public, so a length mismatch returns `0x00` directly.
+#[inline]
+fn ct_eq(a: &[u8], b: &[u8]) -> u8 {
+    if a.len() != b.len() {
+        return 0;
     }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    // 0xFF iff diff==0: (-diff)>>31 is 0 when diff==0 else 1; subtract 1 → 0xFF / 0x00.
+    (((diff as u32).wrapping_neg() >> 31) as u8).wrapping_sub(1)
+}
+
+/// Constant-time select: `mask=0xFF → a`, `mask=0x00 → b`, byte-wise (no branch).
+#[inline]
+fn ct_select(mask: u8, a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    std::array::from_fn(|i| (a[i] & mask) | (b[i] & !mask))
 }
 
 /// ML-KEM-768 key generation (the default parameter set; wraps [`keygen_with`]).
