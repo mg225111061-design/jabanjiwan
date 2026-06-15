@@ -211,6 +211,61 @@ fn dispatch_kernel(name: &str, args: &[Expr]) -> Option<(&'static str, CollapseO
             let k = const_usize(args.get(1)?)?;
             Some(("moments/mixture", moments::point_mass_mixture(&m, k, 1e-6)))
         }
+
+        // ---- Boolean-function analysis (Fourier/Walsh–Hadamard). Tables are 2^vars f64
+        // values in {±1}; structure (low degree / linearity / junta) collapses, an
+        // unstructured function (e.g. PARITY) honestly defers. ----
+        // low_degree(table[], k, tail_bound)
+        "low_degree" => {
+            let table = const_f64_vec(args.first()?)?;
+            let k = const_usize(args.get(1)?)?;
+            let tail = const_f64(args.get(2)?)?;
+            Some(("fourier/low-degree", fourier::low_degree(&table, k, tail)))
+        }
+        // linearity(table[], eps)
+        "linearity" => {
+            let table = const_f64_vec(args.first()?)?;
+            let eps = const_f64(args.get(1)?)?;
+            Some(("fourier/linearity", fourier::linearity(&table, eps)))
+        }
+        // heavy_fourier(table[], theta)
+        "heavy_fourier" => {
+            let table = const_f64_vec(args.first()?)?;
+            let theta = const_f64(args.get(1)?)?;
+            Some(("fourier/heavy", fourier::heavy_fourier(&table, theta)))
+        }
+        // junta(table[], num_vars, j, floor)
+        "junta" => {
+            let table = const_f64_vec(args.first()?)?;
+            let num_vars = const_usize(args.get(1)?)?;
+            let j = const_usize(args.get(2)?)?;
+            let floor = const_f64(args.get(3)?)?;
+            Some(("fourier/junta", fourier::junta(&table, num_vars, j, floor)))
+        }
+        // noise_sensitivity(table[], rho, ns_bound)
+        "noise_sensitivity" => {
+            let table = const_f64_vec(args.first()?)?;
+            let rho = const_f64(args.get(1)?)?;
+            let nb = const_f64(args.get(2)?)?;
+            Some(("fourier/noise-sensitivity", fourier::noise_sensitivity(&table, rho, nb)))
+        }
+
+        // ---- Geometry / latent structure on small literal matrices. ----
+        // spectral_cluster(w[n*n], n, k, gap_min) — Laplacian eigengap on a similarity matrix.
+        "spectral_cluster" => {
+            let w = const_f64_vec(args.first()?)?;
+            let n = const_usize(args.get(1)?)?;
+            let k = const_usize(args.get(2)?)?;
+            let gap = const_f64(args.get(3)?)?;
+            Some(("geometry/spectral-cluster", geometry::spectral_cluster(&w, n, k, gap)))
+        }
+        // tensor_decomp(tensor[p*p*p], p, r, tol) — orthogonal CP via Jennrich.
+        "tensor_decomp" => {
+            let t = const_f64_vec(args.first()?)?;
+            let p = const_usize(args.get(1)?)?;
+            let r = const_usize(args.get(2)?)?;
+            Some(("moments/tensor-decomp", moments::tensor_decomp(&t, p, r, 1e-6)))
+        }
         _ => None,
     }
 }
@@ -244,4 +299,12 @@ const KERNEL_NAMES: &[&str] = &[
     "frequency_moment",
     "heavy_hitters",
     "point_mass_mixture",
+    // Stage 11.3 — boolean-function analysis + small-matrix latent structure.
+    "low_degree",
+    "linearity",
+    "heavy_fourier",
+    "junta",
+    "noise_sensitivity",
+    "spectral_cluster",
+    "tensor_decomp",
 ];

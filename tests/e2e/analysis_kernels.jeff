@@ -1,0 +1,48 @@
+module examples.analysis_kernels
+
+# Stage 11.3 surface-wiring (master directive PART D). Boolean-function analysis and
+# small-matrix latent structure, callable from `.jeff` with literal data. Structure
+# present -> verified collapse; structure absent (e.g. PARITY, a flat similarity matrix)
+# -> honest defer with a named barrier. Tables are 2^vars values in {±1}.
+
+# DICTATOR x0 over 2 vars: f = (+1,-1,+1,-1). Low degree (1), linear, a 1-junta.
+fn low_degree_dictator():
+    low_degree([1.0, -1.0, 1.0, -1.0], 1, 0.000000001)
+
+# PARITY x0⊕x1: (+1,-1,-1,+1). No low-degree concentration -> defer.
+fn low_degree_parity():
+    low_degree([1.0, -1.0, -1.0, 1.0], 1, 0.1)
+
+# A dictator is exactly linear over GF(2) characters -> collapse.
+fn linearity_dictator():
+    linearity([1.0, -1.0, 1.0, -1.0], 0.000000001)
+
+# A dictator has a heavy Fourier coefficient (mass 1 on a single character) -> collapse.
+fn heavy_fourier_dictator():
+    heavy_fourier([1.0, -1.0, 1.0, -1.0], 0.5)
+
+# A dictator depends on one variable -> 1-junta collapse.
+fn junta_dictator():
+    junta([1.0, -1.0, 1.0, -1.0], 2, 1, 0.000001)
+
+# PARITY depends on both variables -> not a 1-junta -> defer.
+fn junta_parity():
+    junta([1.0, -1.0, -1.0, 1.0], 2, 1, 0.000001)
+
+# PARITY is maximally noise-sensitive -> no degree concentration -> defer.
+fn noise_sensitivity_parity():
+    noise_sensitivity([1.0, -1.0, -1.0, 1.0], 0.5, 0.1)
+
+# Spectral clustering: a 6-node similarity matrix with two tight communities {0,1,2},
+# {3,4,5} (intra=1.0, inter=0.01) has a clear 2-cluster eigengap -> collapse.
+fn spectral_cluster_two():
+    spectral_cluster([0.0,1.0,1.0,0.01,0.01,0.01, 1.0,0.0,1.0,0.01,0.01,0.01, 1.0,1.0,0.0,0.01,0.01,0.01, 0.01,0.01,0.01,0.0,1.0,1.0, 0.01,0.01,0.01,1.0,0.0,1.0, 0.01,0.01,0.01,1.0,1.0,0.0], 6, 2, 0.3)
+
+# A uniform similarity matrix has no cluster gap -> defer (flat spectrum).
+fn spectral_cluster_flat():
+    spectral_cluster([1.0,1.0,1.0,1.0,1.0,1.0, 1.0,1.0,1.0,1.0,1.0,1.0, 1.0,1.0,1.0,1.0,1.0,1.0, 1.0,1.0,1.0,1.0,1.0,1.0, 1.0,1.0,1.0,1.0,1.0,1.0, 1.0,1.0,1.0,1.0,1.0,1.0], 6, 2, 0.3)
+
+# Orthogonal CP tensor decomposition: a diagonal 3x3x3 tensor with eigenvalues 3,2,1
+# (rank-3 orthogonal structure) -> collapse via Jennrich.
+fn tensor_decomp_diag():
+    tensor_decomp([3.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,2.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0], 3, 3)
