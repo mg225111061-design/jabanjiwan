@@ -10,6 +10,7 @@
 //! (MIT/Apache), never GMP/`rug` (LGPL).
 
 pub mod complex;
+pub mod dilithium;
 pub mod fmat;
 pub mod fourier;
 pub mod frame;
