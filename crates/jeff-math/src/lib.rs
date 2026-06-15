@@ -13,6 +13,7 @@ pub mod anytime;
 pub mod cfinite;
 pub mod complex;
 pub mod dilithium;
+pub mod fft;
 pub mod fmat;
 pub mod fourier;
 pub mod frame;
@@ -42,6 +43,7 @@ pub mod recovery;
 pub mod ratfun;
 pub mod riccati;
 pub mod sparsefft;
+pub mod sparsefft2d;
 pub mod streaming;
 pub mod tensornet;
 

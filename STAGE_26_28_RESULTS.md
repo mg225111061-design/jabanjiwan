@@ -150,5 +150,89 @@ partial, not a win, per the dense-vs-structured split at the top of this doc.
 Verifier re-proof (entry & exit): green (jeff-verify 49/0, Freivalds). Workspace 444/0, clippy
 `--all-targets -D warnings` clean.
 
-## §C.28 — FFT parity + sparse extension (vs FFTW)
-_(pending — Stage 28)_
+## §C.28 — FFT parity + sparse extension
+
+Incumbent here is **numpy.fft = pocketfft** (tuned C SIMD, permissive). **Not FFTW**: FFTW is
+GPL-2.0 (R5 forbids linking; out-of-process only) and `pyfftw` is absent — stated, not implied.
+Correctness cross-check: JEFF's spectrum matches pocketfft bit-close (`|X[5]|` identical to 6 dp
+at every n).
+
+### §C.28.1 — dense FFT (parity ceiling; the Stockham attempt is an honest NON-WIN)
+Implemented a radix-2 **Stockham autosort** FFT (`jeff_math::fft`) that removes the bit-reversal
+permutation pass (verified: `stockham_matches_dft_within_tol`, `fft_no_bitreversal_pass`,
+`stockham_bit_reproducible`). **Measured: it is slower than the existing in-place radix-2** by
+~30–40% — the out-of-place ping-pong buffering moves more memory than the bit-reversal pass it
+eliminates. Per "adopt only on a measured win; report non-wins honestly (17.2)", Stockham is kept
+for its verified property but is **not** adopted as the fast path.
+
+Dense f64 FFT timings (µs, best-of-20, this machine):
+
+| n | JEFF radix-2 | JEFF Stockham | pocketfft | **radix-2 % of pocketfft** | Stockham/radix-2 |
+|---|---|---|---|---|---|
+| 4096 | 90.4 | 143.5 | 42.3 | **47%** | 0.63× (slower) |
+| 16384 | 439.3 | 647.9 | 372.5 | **85%** | 0.68× |
+| 65536 | 2131 | 2959 | 1613 | **76%** | 0.72× |
+| 262144 | 10172 | 14581 | 7344 | **72%** | 0.70× |
+
+The existing radix-2 already **reaches ~72–85% of pocketfft for n ≥ 16384** (near-parity, dense
+ceiling) — no improvement was needed and the Stockham idea did not beat it. Reported as "reached
+X%", never "beat".
+
+### §C.28.2 — 2D sparse FFT (the STRUCTURED WIN — divergent ratio)
+Extended the 1D HIKP decimation-aliasing + phase-ratio method to a 2D spectrum with `k` spikes and
+to approximately-sparse (k spikes + noise) inputs (`jeff_math::sparsefft2d`). Reads `O(k)` of the
+`N²` samples (three `B×B` subsamplings, `B=O(k)`), runs three `B×B` 2D FFTs ⇒ `O(k log k)`.
+Verified: exact recovery + residual cert (`sparse_fft_2d_recovers_certified`), noisy recovery
+within tolerance (`sparse_fft_noisy_within_tol`), crossover guard (`sparse_fft_below_crossover_uses_dense`),
+op-count ratio grows with N (`sparse_fft_ratio_scales_n_over_k`).
+
+**Fixed k=4, grow n — ratio vs dense `fft2d` DIVERGES (`≈ N²/(k log k)`):**
+
+| n | sparse µs | dense µs | **ratio** |
+|---|---|---|---|
+| 64 | 44.0 | 243 | 5.5 |
+| 128 | 44.0 | 1086 | 24.7 |
+| 256 | 44.5 | 4867 | 109 |
+| 512 | 43.9 | 25580 | 582 |
+| 1024 | 44.1 | 114035 | **2589** |
+
+Sparse stays ~44 µs (reads `O(k)`, independent of N); dense grows as N². Output is the `k` spikes
+(small) ⇒ Ω(N²)-safe; the win is purely from k-sparsity (structure).
+
+**Fixed n=512, grow k — the n/k crossover (where dense overtakes):**
+
+| k | sparse µs | dense µs | ratio | verdict |
+|---|---|---|---|---|
+| 1 | 7.7 | 25933 | 3353 | sparse wins |
+| 4 | 43.9 | 25933 | 591 | sparse wins |
+| 16 | 888 | 25933 | 29.2 | sparse wins |
+| 64 | 17950 | 25933 | 1.44 | sparse wins |
+| 128 | DEFER | 25933 | — | → dense (guard) |
+
+Crossover for n=512 is between k=64 and k=128: above it the bucket count `B ≥ n`, the method
+declines (`None`), and the caller uses the dense FFT — a measured guard, not a guess.
+
+Verifier re-proof (entry & exit): green. Workspace 451/0, clippy `--all-targets -D warnings` clean.
+
+---
+
+## §C — unified summary (26 → 28), and the conservation-law line
+
+| stage | regime | result | honest label |
+|---|---|---|---|
+| **26.1** C-finite N-th term | structured | naive/collapse ratio **9.8→47488** (N=1e3→1e7), ~N/log N | infinite ratio, divergent |
+| **26.2** periodic closed-form | structured | O(1) lookup, **ratio ≈1.18e15 at N=1e15** | genuine huge ratio (O(1)) |
+| **26.3** holonomic sum / telescoper | structured | table O(M²)→O(M) (≈M); 2^n single value O(n)→O(log n) (**40→214847**) | divergent + proof-carrying |
+| **27** dense GEMM | dense | **~50% of OpenBLAS-1T** (best 60%), 4× over prior | parity-half (not a win) |
+| **28.1** dense FFT | dense | radix-2 **~72–85% of pocketfft**; Stockham slower (non-win) | near-parity; honest non-win |
+| **28.2** 2D sparse FFT | structured | ratio vs dense **5.5→2589** (n=64→1024); n/k crossover measured | structured win, divergent |
+
+**The line we never blur.** Dense work (27, 28.1) is Ω(N²)/Ω(N³)/Ω(N log N) with no exploitable
+structure ⇒ the ceiling is **parity**, and we report only "reached X%" (50% of OpenBLAS-1T; 72–85%
+of pocketfft) — never "beat". The infinite / huge ratios (26, 28.2) appear **only** where genuine
+structure exists (constant-coefficient / holonomic recurrences; k-sparse spectra), are
+**asymptotic** (grow with the size argument), and are **Ω(N)-safe**: every such output is a single
+value, a low-order recurrence, or `k` spikes — never Θ(N) data conjured from Θ(N) input. Every
+collapse on the structured side carries a machine-checked certificate or an exact oracle match;
+every dense result is bit-exact (integer) / bit-reproducible (f64) vs its scalar oracle and vs the
+incumbent's entries. Non-wins (Stage 28.1 Stockham) are reported as non-wins.
