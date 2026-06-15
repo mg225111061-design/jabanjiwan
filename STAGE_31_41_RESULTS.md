@@ -116,3 +116,21 @@ DAG whose layer matrix `M` **repeats** N times → length-N shortest paths `= M^
 - Extends coverage into the **combinatorial-optimization** domain (a different axis from
   numeric/signal). 5 tests: `minplus_semiring_correct`, `layered_dag_collapse_measured`,
   `viterbi_path_exact`, `no_structure_zero_gain`, `tropical_cert`. Workspace green, clippy clean.
+
+---
+
+## §C.35 — exponential_fit unification (Prony = ODA) — **BUILT**
+
+`jeff_math::expfit`. Prony (signal recovery) and ODA (series acceleration) are the **same Hankel
+nullspace problem**: `s_n = Σ c_j ξ_j^n` annihilated by a constant-coefficient recurrence (roots =
+`ξ_j`). Shared core `hankel_recurrence` (exact over ℚ, reuses `recurrence::fit_recurrence`).
+
+- `aitken_is_prony_k1_verified`: Aitken Δ² λ == Prony(k=1) λ == 0.5 (single mode, exact); Δ²
+  recovers limit L=10 exactly. The **k=1 unification**, verified.
+- `oda_signal_unified`: the same core serves a convergence sequence (ODA, `2+5(1/3)ⁿ`) and a signal
+  (`2ⁿ+3ⁿ` → order-2). `hankel_nullspace_core`: Fibonacci → order-2.
+- **Shared weakness in the cert**: Hankel condition number. Well-separated modes → moderate cond
+  (`condition_number_in_cert`); near-coincident modes (λ=1.001 vs 1.0) → near-singular Hankel →
+  flagged (`near_mode_instability_flagged`).
+- Certificate: **exact** (ℚ Hankel) / **interval** (condition-number bound). Coverage in two
+  directions (signal recovery + series acceleration). 5 tests. Workspace green, clippy clean.
