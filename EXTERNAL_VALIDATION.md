@@ -42,14 +42,27 @@ validated against official KATs; struct keys, not FIPS byte-packing"). ML-DSA sh
 root cause. **Elevating to KAT-conformance = a real rework** (FIPS encode/decode + verified-
 exact sampling) — possible now that a reference is in hand, but NOT done. No fake pass.
 
+### §3b-official: direct against NIST ACVP (FIPS 203) — **FAIL**
+Re-run against the **official NIST ACVP `ML-KEM-keyGen-FIPS203`** vectors
+(usnistgov/ACVP-Server), parameter set ML-KEM-768, vector **tcId 26**:
+```
+d  = E582B7D7…BAEBC8A0   z = 1CDACB87…E9CBE8F0
+official ek (FIPS 203): len 1184  head 28c793778741b80b02b4339f2aa4347255b099f17264e1b8
+JEFF     ek           : len 1184  head 329281bb17c56de96bd0b6402095477098a4c9fbb4a49767
+```
+Run directly on the official vector: same length, **different bytes → FAIL**. JEFF's ML-KEM
+does not match official FIPS-203 KAT. ML-DSA: same struct-encoding root cause (no FIPS
+serialization), fails by construction; not separately downloaded.
+
 ## §4 Incumbent comparison (vs the world) — accuracy identical, the thesis holds
-Per-call best-of, n=65536 FFT / n=512 GEMM, native:
+Per-call best-of, n=65536 FFT / n=512 GEMM, native (two independent runs, consistent):
 
 | kernel | JEFF | incumbent | verdict |
 |---|---|---|---|
-| dense FFT | 2135 µs (radix-2) | **FFTW 149 µs** (FFTW_MEASURE) | **FFTW wins ~14.3×** |
-| **sparse FFT (k-sparse)** | **HIKP 1.58 µs** | FFTW 149 µs (full) | **JEFF wins ~94×** |
-| dense f64 GEMM | 32.8 ms (blocked) | **OpenBLAS 1.53 ms** | **OpenBLAS wins ~21.4×** |
+| dense FFT | 2135–2150 µs (radix-2) | **FFTW 149 µs** (FFTW_MEASURE) | **FFTW wins ~14.3–14.4×** |
+| **sparse FFT (k-sparse)** | **HIKP 1.31–1.58 µs** | FFTW 149 µs (full) | **JEFF wins ~94–114×** |
+| dense f64 GEMM | 32.6–32.8 ms (blocked) | **OpenBLAS 1.53–1.63 ms** | **OpenBLAS wins ~20–21×** |
+
 
 Accuracy: all three FFTs agree exactly (`mag_bin5 = 32768.000000`); JEFF vs OpenBLAS GEMM
 identical (`C00=51`). **Honest thesis, validated:** JEFF loses to tuned BLAS/FFT on DENSE
