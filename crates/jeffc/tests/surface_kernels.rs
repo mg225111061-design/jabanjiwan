@@ -81,3 +81,11 @@ fn planted_clique_is_exact_clique() {
         other => panic!("planted_clique should collapse, got {other:?}"),
     }
 }
+
+#[test]
+fn streaming_and_mixture_kernels_wired() {
+    // broader surface coverage: streaming sketches + method-of-moments mixture.
+    assert!(matches!(status("frequency_moment_demo"), KernelStatus::Collapsed { .. }));
+    assert!(matches!(status("heavy_hitters_demo"), KernelStatus::Collapsed { .. }));
+    assert!(matches!(status("point_mass_mixture_demo"), KernelStatus::Collapsed { .. }));
+}

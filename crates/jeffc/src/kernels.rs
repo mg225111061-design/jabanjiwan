@@ -6,7 +6,7 @@
 //! makes the kernels callable from `.jeff` source rather than library-only.
 
 use jeff_cert::{BarrierTag, CertClass, CollapseOutcome};
-use jeff_collapse_arith::{fourier, geometry, planted, sparse};
+use jeff_collapse_arith::{fourier, geometry, moments, planted, sparse, streaming};
 use jeff_syntax::ast::{Expr, ExprKind, FnDecl, Lit, StmtKind, UnOp};
 
 /// A surface-wired kernel call compiled at comptime.
@@ -181,6 +181,25 @@ fn dispatch_kernel(name: &str, args: &[Expr]) -> Option<(&'static str, CollapseO
             let q = const_u64(args.get(3)?)?;
             Some(("fourier/list-decode", fourier::list_decode(&xs, &ys, k, q)))
         }
+        // frequency_moment(items[], k) — AMS F_k (F2 collapses; high moments defer)
+        "frequency_moment" => {
+            let items = const_u64_vec(args.first()?)?;
+            let k = const_usize(args.get(1)?)?;
+            Some(("streaming/ams-f2", streaming::frequency_moment(&items, k, 0.5)))
+        }
+        // heavy_hitters(items[], k, phi)
+        "heavy_hitters" => {
+            let items = const_u64_vec(args.first()?)?;
+            let k = const_usize(args.get(1)?)?;
+            let phi = const_f64(args.get(2)?)?;
+            Some(("streaming/heavy-hitters", streaming::heavy_hitters(&items, k, phi)))
+        }
+        // point_mass_mixture(moments[], k) — method of moments via Prony
+        "point_mass_mixture" => {
+            let m = const_f64_vec(args.first()?)?;
+            let k = const_usize(args.get(1)?)?;
+            Some(("moments/mixture", moments::point_mass_mixture(&m, k, 1e-6)))
+        }
         _ => None,
     }
 }
@@ -204,5 +223,14 @@ pub fn is_kernel_fn(f: &FnDecl) -> bool {
     single_call(f).map(|(name, _)| KERNEL_NAMES.contains(&name)).unwrap_or(false)
 }
 
-const KERNEL_NAMES: &[&str] =
-    &["prony", "sparse_fft", "welch_etf", "planted_clique", "persistent_homology", "list_decode"];
+const KERNEL_NAMES: &[&str] = &[
+    "prony",
+    "sparse_fft",
+    "welch_etf",
+    "planted_clique",
+    "persistent_homology",
+    "list_decode",
+    "frequency_moment",
+    "heavy_hitters",
+    "point_mass_mixture",
+];

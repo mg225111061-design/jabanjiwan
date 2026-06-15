@@ -34,3 +34,15 @@ fn persistent_homology_demo():
 # Reed-Solomon list decoding over GF(97): p(x)=3+2x+x^2 with 2 errors -> recovered exactly.
 fn list_decode_demo():
     list_decode([1,2,3,4,5,6,7], [6,16,18,27,47,51,66], 3, 97)
+
+# Streaming F2 (AMS) over a skewed multiset -> eps estimate vs the exact oracle.
+fn frequency_moment_demo():
+    frequency_moment([7,7,7,7,7,7,7,7,1,2,3,4,5,6,8,9], 2)
+
+# Heavy hitters (Misra-Gries): 7 dominates -> collapse; report the genuine >= phi*n item.
+fn heavy_hitters_demo():
+    heavy_hitters([7,7,7,7,7,7,7,7,7,7,1,2,3,4], 4, 0.4)
+
+# Method-of-moments mixture (Prony on the moments m_t = 0.7*2^t + 0.3*5^t): two masses.
+fn point_mass_mixture_demo():
+    point_mass_mixture([1.0, 2.9, 10.3, 43.1, 198.7, 959.9], 2)
