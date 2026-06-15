@@ -19,6 +19,9 @@
 
 use jeff_cert::{BarrierTag, CertClass, CollapseOutcome};
 
+/// Stage 22 — measured hidden-structure coverage over the target domains.
+pub mod coverage;
+
 /// The honest outcome of an absorbed operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Absorbed {
