@@ -26,6 +26,7 @@ pub mod geometry;
 pub mod gf2;
 pub mod holographic;
 pub mod holsum;
+pub mod hbfc;
 pub mod hyper;
 pub mod intrel;
 pub mod keccak;
@@ -55,6 +56,7 @@ pub mod sparsefft;
 pub mod sparsefft2d;
 pub mod streaming;
 pub mod tensornet;
+pub mod tff;
 pub mod tetration;
 pub mod tropical;
 

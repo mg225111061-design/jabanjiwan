@@ -178,3 +178,27 @@ topology) per rule 7 — built but not over-valued (outside JEFF's numeric/signa
   (3-cycle δ⁰ rank 2 ⇒ H¹ = 3−2 = 1). Generalizes to n-sensor nerve graphs. Tests:
   `sensor_gluing_obstruction_h1_nonzero`, `holonomy_360_obstruction`, `gluing_unsat_proven`,
   `nerve_b1_generalizes` (4). Workspace green, clippy clean, verifier 49/0.
+
+---
+
+## §C.38 — TFF (abstract interpretation) + HBFC (fusion termination) — **BUILT** (38.2 downgraded by 32.0)
+
+**38.1 TFF** (`jeff_math::tff`): verified abstract interpretation on the interval lattice
+(`⊑/⊔/∇/△`). For `i:=0; while i<n {i++}`: widening converges to the post-fixpoint `[0,+∞]` (checked
+`F(x)⊑x` exactly), narrowing recovers the tight `[0,n]`; widening terminates by a strictly
+decreasing ordinal measure (finite-bound count). Certificate: **interval-bound, sound-upper** — the
+exact lfp is uncomputable (Rice), so a sound *upper* bound only (never "exact" — stated). Justifies
+bounds-check elimination (`i ≤ n`). New domain (verified AI; Astrée/IKOS lack machine-checked
+certs). Tests: `widening_reaches_postfixpoint`, `narrowing_recovers_precision`,
+`interval_bound_sound_upper`, `lattice_ordinal_termination`, `lattice_laws` (5).
+
+**38.2 HBFC** (`jeff_math::hbfc`) — **GATED by 32.0**: since `‖JEFF‖ = ω^ω` (not ε₀), the ε₀ Hydra
+self-certification is **unsound for this JEFF** → **downgraded to ω^k** (recorded loudly; this is
+exactly the keystone negative). Fold-fusion (deforestation) measures stay in the ω^k fragment; a
+fusion rewrite may transiently raise Hydra heads (depth 3→2, heads 2→3) yet the ordinal measure
+strictly decreases (ω³→ω²) ⇒ terminates. Fusion law semantic preservation: `sum(map(g,map(f,xs)))`
+== fused `fold` (no intermediates), `Σ(i²+1)=60`. Certificate: **ordinal-termination (ω^k)** +
+observational equivalence. Tests: `hbfc_gated_by_strength_audit`, `hydra_measure_strict_decrease`,
+`fusion_terminates_or_downgraded`, `fusion_law_semantic_preservation` (4).
+
+Both verification-power. Workspace green, clippy clean, verifier 49/0.
