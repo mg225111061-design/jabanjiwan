@@ -3,9 +3,14 @@ name = "jeff-stdlib"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-stdlib (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Python-absorption stdlib (CLAUDE.md PART G / Stage 10): 8 layers mapping NumPy/SciPy/sklearn/NetworkX/statsmodels/streaming idioms onto verified collapsers — each call returns an honest collapse-or-defer status."
 
 [dependencies]
+jeff-math = { workspace = true }
+jeff-cert = { workspace = true }
+jeff-collapse-arith = { workspace = true }
+jeff-collapse-tensor = { workspace = true }
+jeff-collapse-holographic = { workspace = true }
 
 [lints]
 workspace = true

@@ -286,6 +286,13 @@ dependencies = [
 [[package]]
 name = "jeff-stdlib"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-collapse-arith",
+ "jeff-collapse-holographic",
+ "jeff-collapse-tensor",
+ "jeff-math",
+]
 
 [[package]]
 name = "jeff-syntax"
