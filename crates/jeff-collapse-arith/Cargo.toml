@@ -16,6 +16,7 @@ num-bigint = { workspace = true }
 num-rational = { workspace = true }
 num-integer = { workspace = true }
 num-traits = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 jeff-syntax = { workspace = true }

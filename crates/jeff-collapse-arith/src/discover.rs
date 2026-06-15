@@ -215,6 +215,50 @@ impl FoldCache {
     }
 }
 
+/// Stage 16.2 — universal verified memoization, keyed by the **certificate** (same verified
+/// *meaning*, not same bytes of input). A given verified computation is stored once, ever; a
+/// hit returns a result that is trusted only via its attached certificate, re-verifiable
+/// without recomputation. Two computations that arrive at the same certificate share one
+/// slot — compute once across the ecosystem.
+#[derive(Default)]
+pub struct CertCache {
+    store: std::collections::HashMap<String, jeff_cert::Certificate>,
+}
+
+impl CertCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Canonical key: the certificate's serialized verified meaning.
+    fn key(cert: &jeff_cert::Certificate) -> String {
+        serde_json::to_string(cert).expect("certificate serializes")
+    }
+
+    pub fn len(&self) -> usize {
+        self.store.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.store.is_empty()
+    }
+
+    /// Memoize a verified result by its certificate. Returns `true` if newly stored (first
+    /// time this verified meaning is seen), `false` if an equivalent certificate was already
+    /// present (reused — computed once).
+    pub fn insert(&mut self, vc: &VerifiedCertificate) -> bool {
+        let cert = vc.certificate().clone();
+        let k = Self::key(&cert);
+        self.store.insert(k, cert).is_none()
+    }
+
+    /// Look up by an equivalent certificate; on a hit, RE-VERIFY from the cached certificate
+    /// (no recomputation of the underlying result). `None` on a miss.
+    pub fn get_reverified(&self, cert: &jeff_cert::Certificate) -> Option<VerifiedCertificate> {
+        let k = Self::key(cert);
+        self.store.get(&k).cloned().and_then(jeff_verify::verify)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,6 +367,50 @@ mod tests {
         assert!(entry.found);
         let c = entry.cert.certificate().clone();
         assert!(jeff_verify::verify(c).is_some(), "cached cert must re-verify");
+    }
+
+    #[test]
+    fn cache_keyed_by_certificate() {
+        // Stage 16.2: the cache is keyed by verified meaning. The SAME fold computed twice
+        // maps to one slot (compute once, ever).
+        let fib = seq(&[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]);
+        let vc = match discover_sequence(&fib, 5, 1) {
+            Discovery::Found { cert, .. } => cert,
+            _ => panic!("Fibonacci folds"),
+        };
+        let mut cache = CertCache::new();
+        assert!(cache.insert(&vc), "first insert is new");
+        let vc2 = match discover_sequence(&fib, 5, 1) {
+            Discovery::Found { cert, .. } => cert,
+            _ => unreachable!(),
+        };
+        assert!(!cache.insert(&vc2), "an equivalent certificate reuses the slot");
+        assert_eq!(cache.len(), 1, "computed once across the ecosystem");
+    }
+
+    #[test]
+    fn cache_hit_reverifiable() {
+        // A cache hit returns a result trusted only via its re-verifiable certificate.
+        let fib = seq(&[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]);
+        let vc = match discover_sequence(&fib, 5, 1) {
+            Discovery::Found { cert, .. } => cert,
+            _ => panic!("folds"),
+        };
+        let mut cache = CertCache::new();
+        cache.insert(&vc);
+        let hit = cache.get_reverified(vc.certificate()).expect("hit re-verifies");
+        assert_eq!(
+            jeff_verify::checker_name(&hit.certificate().evidence),
+            "recurrence-annihilation-exact"
+        );
+        // a certificate never inserted is a miss.
+        let other = recurrence_present_certificate(
+            seq(&[1, 1, 1]),
+            1,
+            0,
+            vec![BigInt::from(1), BigInt::from(-1)],
+        );
+        assert!(cache.get_reverified(&other).is_none());
     }
 
     #[test]
