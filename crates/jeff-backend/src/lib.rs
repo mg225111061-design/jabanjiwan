@@ -12,6 +12,7 @@
 //! claim an incumbent comparison we did not run.
 
 pub mod autotune;
+pub mod amx;
 pub mod cost;
 pub mod cpuprobe;
 pub mod measure;
