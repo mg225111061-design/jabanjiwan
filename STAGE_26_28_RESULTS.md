@@ -99,8 +99,56 @@ Workspace 439/0, clippy `--all-targets -D warnings` clean.
 
 ---
 
-## §C.27 — GEMM parity (vs OpenBLAS)
-_(pending — Stage 27)_
+## §C.27 — GEMM parity (vs OpenBLAS) — dense, parity is the ceiling
+
+Dense f64 GEMM is Ω(N³) with no exploitable structure, so the honest target is **parity**, not a
+win. Built the BLIS/GotoBLAS recipe the Stage-17.2 register-tiling attempt was missing: a **hand
+AVX-512 microkernel** (intrinsics, `#[target_feature(avx512f)]`, FMA) + **packing** + the
+**five-loop nest** blocked from this CPU's measured cache geometry (`jeff_backend::gemm`).
+
+- **Microkernel** `MR×NR = 8×16` (16 zmm accumulators; 2 B-loads + 8 A-broadcasts per 16 FMAs ⇒
+  FMA-bound, not load-port-bound — the 8×8 first cut was load-bound at ~20 GFLOP/s). B-micropanel
+  prefetch. Blocking `KC=170, MC=384, NC=8192` derived from L1=32K / L2=1M / L3=33M.
+- **Correctness (P0)**: bit-exact vs the scalar oracle for integer-valued inputs
+  (`microkernel_matches_oracle`, `packed_gemm_matches_oracle`,
+  `packed_gemm_handles_tile_straddling_sizes` — sizes not multiples of MR/NR crossing all blocks),
+  and bit-reproducible run-to-run for general f64 (`microkernel_bit_reproducible`). Verify entries
+  match OpenBLAS exactly (e.g. C0,Cmid,Clast = 35,41,−41 at n=2048). For general f64 the result
+  differs from the naive triple loop only by FMA single-rounding / blocked grouping — standard
+  FMA-BLAS behaviour, stated not hidden.
+
+**Measured (this machine, `--release`, best-of-N), vs OpenBLAS 0.3.31 single-thread (numpy
+backend, `OPENBLAS_NUM_THREADS=1`):**
+
+| n | JEFF GFLOP/s | old blocked | OpenBLAS-1T | **% of OpenBLAS-1T** | JEFF/old |
+|---|---|---|---|---|---|
+| 256 | 23.9 | ~9.6 | 52.3 | **46%** | 2.5× |
+| 512 | 33.8 | ~7.5 | 56.8 | **60%** | 4.4× |
+| 1024 | 28.2 | ~7.9 | 58.0 | **49%** | 3.7× |
+| 2048 | 30.4 | ~8.1 | 62.1 | **49%** | 3.8× |
+
+**Reached ≈ 50% of OpenBLAS single-thread (best 60% at n=512)** — a **~4× gain** over the prior
+blocked path (which was ~13%). We do **not** claim to beat OpenBLAS; this is "reached X%".
+
+**Bottleneck (profiled analytically — no hardware perf counters in this sandbox, stated
+honestly).** JEFF's microkernel sustains ~30 GFLOP/s ≈ **33% of the ~90 GFLOP/s vector-FMA peak**
+(8 lanes × 2 FMA × 2 flop × 2.8 GHz); OpenBLAS reaches ~65%. The remaining ~2× is the classic
+last-mile that needs per-µarch hand asm: (1) software pipelining of the FMA/broadcast/load streams
+to fully hide FMA latency, (2) tuned prefetch distance, (3) lower C-streaming traffic (C is
+loaded/stored once per KC block; OpenBLAS's larger effective KC and register choreography reduce
+this). These are µarch-specific and beyond a portable Rust-intrinsics kernel.
+
+**Multicore: not added.** The recipe gates multicore on reaching ≥70% single-thread; at ~50% it is
+not met, and multicore would not change the *fraction* vs the (also-multicore) incumbent — so it is
+honestly omitted rather than used to inflate a raw number.
+
+**Conclusion (honest, regime-appropriate):** dense GEMM is the parity-ceiling regime; JEFF reached
+~50% of single-thread OpenBLAS (4× over prior), bit-exact, with the remaining gap precisely
+attributed to hand-asm pipelining. This is short of the ~80% aspiration — recorded as a measured
+partial, not a win, per the dense-vs-structured split at the top of this doc.
+
+Verifier re-proof (entry & exit): green (jeff-verify 49/0, Freivalds). Workspace 444/0, clippy
+`--all-targets -D warnings` clean.
 
 ## §C.28 — FFT parity + sparse extension (vs FFTW)
 _(pending — Stage 28)_

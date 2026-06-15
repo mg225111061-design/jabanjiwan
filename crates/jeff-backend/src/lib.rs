@@ -15,6 +15,7 @@ pub mod autotune;
 pub mod amx;
 pub mod cost;
 pub mod cpuprobe;
+pub mod gemm;
 pub mod measure;
 pub mod parallel;
 pub mod simd;
