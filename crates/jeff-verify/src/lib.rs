@@ -1027,6 +1027,13 @@ impl Checker for AbsenceChecker {
                     VerifyResult::Invalid
                 }
             }
+            Evidence::IntegerRelationAbsence { values, bound } => {
+                if jeff_math::intrel::excludes_integer_relation(values, *bound as i64) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Invalid,
         }
     }
@@ -1116,9 +1123,9 @@ impl Checker for DefaultRegistry {
             | Evidence::NoiseSensitivity { .. }
             | Evidence::TensorContraction { .. }
             | Evidence::PlanarMatchings { .. } => KernelChecker.check(ev, ob, b),
-            Evidence::RecurrenceAbsence { .. } | Evidence::RankAbsence { .. } => {
-                AbsenceChecker.check(ev, ob, b)
-            }
+            Evidence::RecurrenceAbsence { .. }
+            | Evidence::RankAbsence { .. }
+            | Evidence::IntegerRelationAbsence { .. } => AbsenceChecker.check(ev, ob, b),
             Evidence::RecurrencePresent { .. } => RecurrenceChecker.check(ev, ob, b),
         }
     }
@@ -1184,6 +1191,7 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::RecurrenceAbsence { .. } => "recurrence-exclusion-exact",
         Evidence::RankAbsence { .. } => "rank-gap-absence",
         Evidence::RecurrencePresent { .. } => "recurrence-annihilation-exact",
+        Evidence::IntegerRelationAbsence { .. } => "integer-relation-exclusion-exact",
     }
 }
 
@@ -2324,5 +2332,22 @@ mod tests {
         // claim is false and is rejected (DR1).
         let rank1 = vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0];
         assert!(verify(jeff_cert::rank_absence_certificate(rank1, 3, 3, 1, 1e-6)).is_none());
+    }
+
+    #[test]
+    fn integer_relation_absence_sound() {
+        // Stage 20 (PSLQ family, exact): 2,3,7 have no ‖a‖∞≤1 integer relation ⇒ the
+        // exclusion certificate verifies, labeled (integer-relation, (k, bound)).
+        let v = ints(&[2, 3, 7]);
+        let vc = verify(jeff_cert::integer_relation_absence_certificate(v, 1))
+            .expect("no ‖·‖∞≤1 relation");
+        assert_eq!(checker_name(&vc.certificate().evidence), "integer-relation-exclusion-exact");
+        let (class, theta) = vc.certificate().evidence.absence_label().unwrap();
+        assert_eq!(class, "integer-relation");
+        assert!(theta.contains("k=3") && theta.contains("bound=1"));
+        // 2,3,5 DO have a relation (2+3−5=0) ⇒ a bound-5 absence claim is false → rejected.
+        assert!(
+            verify(jeff_cert::integer_relation_absence_certificate(ints(&[2, 3, 5]), 5)).is_none()
+        );
     }
 }

@@ -19,6 +19,7 @@ pub mod geometry;
 pub mod gf2;
 pub mod holographic;
 pub mod hyper;
+pub mod intrel;
 pub mod keccak;
 pub mod kyber;
 pub mod lattice;

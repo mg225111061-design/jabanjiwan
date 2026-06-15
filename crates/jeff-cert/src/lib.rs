@@ -679,6 +679,13 @@ pub enum Evidence {
         degree: usize,
         operator: Vec<BigInt>,
     },
+    /// A proof that NO nonzero integer relation `Σ a_i·values_i = 0` exists with
+    /// `‖a‖∞ ≤ bound` (exact bounded search — the PSLQ-exclusion family). Absence certificate
+    /// relative to (class = integer-relation, Θ = (k = values.len(), bound)).
+    IntegerRelationAbsence {
+        values: Vec<BigInt>,
+        bound: u32,
+    },
 }
 
 impl Evidence {
@@ -771,6 +778,8 @@ impl Evidence {
             Evidence::RankAbsence { .. } => CertClass::EpsApproximate,
             // Stage 15.2: exact annihilation of the observed terms by the operator.
             Evidence::RecurrencePresent { .. } => CertClass::Exact,
+            // Stage 20: exact bounded integer-relation exclusion (PSLQ family).
+            Evidence::IntegerRelationAbsence { .. } => CertClass::Exact,
         }
     }
 
@@ -779,7 +788,9 @@ impl Evidence {
     pub fn is_absence(&self) -> bool {
         matches!(
             self,
-            Evidence::RecurrenceAbsence { .. } | Evidence::RankAbsence { .. }
+            Evidence::RecurrenceAbsence { .. }
+                | Evidence::RankAbsence { .. }
+                | Evidence::IntegerRelationAbsence { .. }
         )
     }
 
@@ -795,6 +806,10 @@ impl Evidence {
             Evidence::RankAbsence { rows, cols, rank, eps, .. } => Some((
                 "low-rank",
                 format!("rank<={rank},eps={eps},dims={rows}x{cols}"),
+            )),
+            Evidence::IntegerRelationAbsence { values, bound } => Some((
+                "integer-relation",
+                format!("k={},bound={bound}", values.len()),
             )),
             _ => None,
         }
@@ -874,6 +889,27 @@ pub fn recurrence_present_certificate(
             samples.len()
         )),
         evidence: Evidence::RecurrencePresent { samples, order, degree, operator },
+        boundaries: vec![],
+        fallback: src,
+    }
+}
+
+/// Build a labeled integer-relation **absence** certificate (Stage 20): no nonzero integer
+/// relation with `‖a‖∞ ≤ bound` exists among `values`. Assembles only; the checker re-runs
+/// the exact bounded search (a false claim fails the gate).
+pub fn integer_relation_absence_certificate(values: Vec<BigInt>, bound: u32) -> Certificate {
+    let k = values.len();
+    let span = Span::dummy();
+    let src = IrRef::new(0, span);
+    Certificate {
+        collapser_id: "discover/integer-relation-exclusion".into(),
+        source: src,
+        collapsed: src,
+        obligation: Obligation::new(format!(
+            "no nonzero integer relation with ‖a‖∞<={bound} among the {k} values \
+             [class=integer-relation, theta=(k={k},bound={bound})]"
+        )),
+        evidence: Evidence::IntegerRelationAbsence { values, bound },
         boundaries: vec![],
         fallback: src,
     }
