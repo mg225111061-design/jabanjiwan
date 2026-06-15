@@ -8,6 +8,60 @@ use crate::complex::{poly_roots, Complex};
 use crate::prony::prony_fit;
 use std::f64::consts::PI;
 
+/// Stage 18.2 — genuinely sublinear sparse FFT for an exactly-k-sparse spectrum, via
+/// **decimation aliasing + phase-ratio frequency recovery**. It reads only `O(k)` of the `n`
+/// samples (two decimated subsamplings) and runs two `O(k)`-point FFTs → `O(k log k)`, never
+/// touching all `n`. Returns the support `(freq, re, im)` in `recovery::sparse_fft`'s
+/// convention (so the residual certificate re-validates), or `None` when the spectrum
+/// collides under the chosen bucket count or isn't cleanly sparse — the caller then falls
+/// back to the dense `O(n log n)` path (the crossover guard). Requires `n` a power of two.
+///
+/// Math: decimating `x` by `D = n/B` aliases bin `b` of the `B`-point DFT onto the spike
+/// whose frequency `≡ b (mod B)`; a one-sample shift multiplies that bin by `ω_n^{freq}`, so
+/// `Y1[b]/Y0[b] = e^{2πi·freq/n}` recovers the full frequency exactly, and `X[freq] = D·Y0[b]`.
+/// A surviving spike must satisfy `freq ≡ b (mod B)`; a violated check signals a collision.
+pub fn hikp_sparse_fft(signal: &[f64], k: usize, rel_thresh: f64) -> Option<Vec<(usize, f64, f64)>> {
+    let n = signal.len();
+    if k == 0 || n < 2 || !n.is_power_of_two() {
+        return None;
+    }
+    let mut b = 1usize;
+    while b < 2 * k + 1 {
+        b <<= 1;
+    }
+    if b >= n {
+        return None; // need D ≥ 2 (the shift) and B<n to be sublinear → dense fallback
+    }
+    let d = n / b;
+    let y0: Vec<Complex> = (0..b).map(|t| Complex::new(signal[t * d], 0.0)).collect();
+    let y1: Vec<Complex> = (0..b).map(|t| Complex::new(signal[t * d + 1], 0.0)).collect();
+    let f0 = fft_radix2(&y0);
+    let f1 = fft_radix2(&y1);
+    let maxmag = f0.iter().map(|c| c.abs()).fold(0.0f64, f64::max);
+    if maxmag == 0.0 {
+        return Some(vec![]);
+    }
+    let thresh = rel_thresh * maxmag;
+    let two_pi = std::f64::consts::TAU;
+    let mut support = Vec::new();
+    for (bin, (&c0, &c1)) in f0.iter().zip(&f1).enumerate() {
+        if c0.abs() < thresh {
+            continue;
+        }
+        let ratio = c1.div(c0); // ≈ e^{2πi·freq/n}
+        let freq = (ratio.arg() / two_pi * n as f64).round().rem_euclid(n as f64) as usize;
+        if freq % b != bin {
+            return None; // collision: not a single clean spike in this bucket → bail to dense
+        }
+        let v = c0.scale(d as f64); // X[freq]
+        support.push((freq, v.re, v.im));
+    }
+    if support.len() > k {
+        return None;
+    }
+    Some(support)
+}
+
 /// Naive `O(n²)` DFT peak finder: the `k` frequency bins (in `0..n`) with the largest
 /// magnitude. The exact oracle the sublinear recovery is checked against.
 pub fn naive_dft_peaks(signal: &[f64], k: usize) -> Vec<usize> {
@@ -119,6 +173,73 @@ pub fn sinusoid_sample(freqs: &[usize], n: usize, t: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn k_sparse_signal(n: usize, tones: &[(usize, f64)]) -> Vec<f64> {
+        (0..n)
+            .map(|t| {
+                tones
+                    .iter()
+                    .map(|&(f, amp)| amp * (std::f64::consts::TAU * f as f64 * t as f64 / n as f64).cos())
+                    .sum()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn hikp_matches_naive_within_tol() {
+        // exactly-sparse signal: HIKP recovers the spectrum from O(k) samples; reconstructing
+        // from the recovered support matches the signal (residual-certified, Tier B).
+        let n = 1024usize;
+        let tones = [(1usize, 1.0), (5, 0.7), (9, 0.4)]; // 3 cosines ⇒ 6 spectral spikes
+        let signal = k_sparse_signal(n, &tones);
+        let support = super::hikp_sparse_fft(&signal, 2 * tones.len(), 1e-6)
+            .expect("clean sparse spectrum recovers");
+        let recon = crate::recovery::idft_sparse(&support, n);
+        let resid = crate::recovery::l2(
+            &signal.iter().zip(&recon).map(|(a, b)| a - b).collect::<Vec<_>>(),
+        );
+        assert!(
+            resid <= 1e-6 * crate::recovery::l2(&signal),
+            "HIKP residual {resid:e} must be ≤ tol·‖x‖"
+        );
+        // and it found exactly the 6 conjugate-pair spikes.
+        assert_eq!(support.len(), 6);
+    }
+
+    #[test]
+    fn hikp_sublinear_in_k() {
+        // self-relative: at large n with small k, HIKP reads O(k) samples and beats a full
+        // O(n log n) FFT that must touch all n. Same recovered tones.
+        let n = 1 << 16; // 65536
+        let tones = [(3usize, 1.0), (777, 0.5), (10001, 0.25)];
+        let signal = k_sparse_signal(n, &tones);
+        let t0 = std::time::Instant::now();
+        let support = super::hikp_sparse_fft(&signal, 2 * tones.len(), 1e-6).expect("recovers");
+        let hikp = t0.elapsed().as_secs_f64().max(1e-12);
+        let input: Vec<Complex> = signal.iter().map(|&v| Complex::new(v, 0.0)).collect();
+        let t1 = std::time::Instant::now();
+        let _full = fft_radix2(&input);
+        let full = t1.elapsed().as_secs_f64();
+        // recovered the 3 positive tones (among the 6 spikes).
+        for &(f, _) in &tones {
+            assert!(support.iter().any(|&(rf, _, _)| rf == f), "missing tone {f}");
+        }
+        assert!(
+            hikp * 10.0 < full,
+            "HIKP must dominate the full FFT at n={n} (hikp {hikp:.6}s, full {full:.6}s)"
+        );
+    }
+
+    #[test]
+    fn below_crossover_uses_dense() {
+        // small n / large k ⇒ buckets ≥ n ⇒ HIKP declines (None), caller uses dense FFT.
+        let n = 16usize;
+        let signal: Vec<f64> = (0..n).map(|t| (t as f64).sin()).collect();
+        assert!(super::hikp_sparse_fft(&signal, 8, 1e-6).is_none(), "must defer to dense");
+        // non-power-of-two also declines.
+        let odd: Vec<f64> = vec![1.0; 100];
+        assert!(super::hikp_sparse_fft(&odd, 2, 1e-6).is_none());
+    }
 
     #[test]
     fn prony_recovers_frequencies_sublinearly() {
