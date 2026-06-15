@@ -644,6 +644,20 @@ pub enum Evidence {
         edges: Vec<(usize, usize)>,
         count: u64,
     },
+
+    // ---- Stage 15.3: certified structure-ABSENCE (defer becomes proof) ----
+    /// A machine-checkable proof that NO nonzero D-finite operator of order ≤ `order` and
+    /// degree ≤ `degree` annihilates the integer sequence `samples` — the Hermite-Padé
+    /// linear system is determined and has full column rank (trivial nullspace), exact over
+    /// ℚ. This is an *absence* certificate: the claim is always relative to the structure
+    /// class (D-finite) and parameters Θ = (order, degree, N = samples.len()). Per the
+    /// uncomputability boundary an absolute "structureless" claim is forbidden — the
+    /// (class, Θ) label is intrinsic to this variant.
+    RecurrenceAbsence {
+        samples: Vec<BigInt>,
+        order: usize,
+        degree: usize,
+    },
 }
 
 impl Evidence {
@@ -730,7 +744,55 @@ impl Evidence {
             Evidence::TensorContraction { .. } => CertClass::Exact,
             // Stage 8: exact count vs naive perfect-matching enumeration.
             Evidence::PlanarMatchings { .. } => CertClass::Exact,
+            // Stage 15.3: exact exclusion proof (full-rank Hermite-Padé over ℚ).
+            Evidence::RecurrenceAbsence { .. } => CertClass::Exact,
         }
+    }
+
+    /// True iff this evidence is a structure-ABSENCE certificate (Stage 15.3) — a claim
+    /// about what is *not* present, which must always be labeled (class, Θ).
+    pub fn is_absence(&self) -> bool {
+        matches!(self, Evidence::RecurrenceAbsence { .. })
+    }
+
+    /// The mandatory `(structure class, parameter label Θ)` of an absence certificate, or
+    /// `None` if this evidence is not an absence claim. The uncomputability boundary forbids
+    /// an unindexed "structureless" assertion, so every absence consumer reads this label.
+    pub fn absence_label(&self) -> Option<(&'static str, String)> {
+        match self {
+            Evidence::RecurrenceAbsence { samples, order, degree } => Some((
+                "D-finite",
+                format!("order<={order},degree<={degree},N={}", samples.len()),
+            )),
+            _ => None,
+        }
+    }
+}
+
+/// Build a labeled D-finite **structure-absence** certificate (Stage 15.3). The obligation
+/// string embeds the mandatory `(class, Θ)` label so no downstream "structureless" claim is
+/// ever unindexed. This only *assembles* the certificate; [`crate::Checker`] (jeff-verify)
+/// decides validity — an absence claim for a sequence that actually has such an operator
+/// fails the gate (DR1), so a false absence can never ship.
+pub fn recurrence_absence_certificate(
+    samples: Vec<BigInt>,
+    order: usize,
+    degree: usize,
+) -> Certificate {
+    let n = samples.len();
+    let span = Span::dummy();
+    let src = IrRef::new(0, span);
+    Certificate {
+        collapser_id: "discover/recurrence-exclusion".into(),
+        source: src,
+        collapsed: src,
+        obligation: Obligation::new(format!(
+            "no D-finite operator of order<={order},degree<={degree} annihilates the {n} samples \
+             [class=D-finite, theta=(order<={order},degree<={degree},N={n})]"
+        )),
+        evidence: Evidence::RecurrenceAbsence { samples, order, degree },
+        boundaries: vec![],
+        fallback: src,
     }
 }
 

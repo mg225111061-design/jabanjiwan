@@ -1000,6 +1000,28 @@ fn tol_ok(tol: f64) -> bool {
     !tol.is_nan() && tol >= 0.0 && tol.is_finite()
 }
 
+/// Structure-ABSENCE checker (Stage 15.3 — defer becomes proof). It re-runs the exact
+/// exclusion test independently of whoever produced the certificate, so a *false* absence
+/// claim (a sequence that actually has such an operator, or an underdetermined system) is
+/// rejected → `verify` returns `None` (DR1). The claim is always relative to (class, Θ),
+/// carried in the evidence.
+pub struct AbsenceChecker;
+
+impl Checker for AbsenceChecker {
+    fn check(&self, ev: &Evidence, _ob: &Obligation, _b: &[Boundary]) -> VerifyResult {
+        match ev {
+            Evidence::RecurrenceAbsence { samples, order, degree } => {
+                if jeff_math::recurrence::excludes_recurrence(samples, *order, *degree) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+            _ => VerifyResult::Invalid,
+        }
+    }
+}
+
 /// Routes evidence to the right checker (PART 6.2 / APPENDIX F.6). Implements
 /// [`Checker`] so it plugs straight into `verify_with`.
 pub struct DefaultRegistry;
@@ -1060,6 +1082,7 @@ impl Checker for DefaultRegistry {
             | Evidence::NoiseSensitivity { .. }
             | Evidence::TensorContraction { .. }
             | Evidence::PlanarMatchings { .. } => KernelChecker.check(ev, ob, b),
+            Evidence::RecurrenceAbsence { .. } => AbsenceChecker.check(ev, ob, b),
         }
     }
 }
@@ -1121,6 +1144,7 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::NoiseSensitivity { .. } => "wht-noise-sensitivity",
         Evidence::TensorContraction { .. } => "tensor-naive-replay",
         Evidence::PlanarMatchings { .. } => "fkt-naive-pm-replay",
+        Evidence::RecurrenceAbsence { .. } => "recurrence-exclusion-exact",
     }
 }
 
@@ -2188,5 +2212,62 @@ mod tests {
             }),
             "cayley-hamilton"
         );
+    }
+
+    // ---- Stage 15.3 — certified structure-absence (defer becomes proof) ----
+
+    fn ints(v: &[i64]) -> Vec<BigInt> {
+        v.iter().map(|&x| BigInt::from(x)).collect()
+    }
+
+    #[test]
+    fn recurrence_exclusion_exact() {
+        // A high-entropy integer sequence has NO low-order D-finite operator: the absence
+        // certificate verifies exactly (full column rank over ℚ).
+        let mut x = 0x1234_5678_9abc_def1u64;
+        let s: Vec<BigInt> = (0..40)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                BigInt::from((x % 1000) as i64)
+            })
+            .collect();
+        let vc = verify(jeff_cert::recurrence_absence_certificate(s, 2, 1))
+            .expect("exclusion at (2,1) is provable");
+        assert_eq!(checker_name(&vc.certificate().evidence), "recurrence-exclusion-exact");
+        assert_eq!(vc.certificate().evidence.cert_class(), jeff_cert::CertClass::Exact);
+    }
+
+    #[test]
+    fn false_recurrence_absence_rejected() {
+        // Verifier integrity (DR1): unsound absence claims fail the gate.
+        // (a) Fibonacci HAS an order-2 constant recurrence ⇒ its (2,0) absence is false.
+        let fib = ints(&[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]);
+        assert!(verify(jeff_cert::recurrence_absence_certificate(fib, 2, 0)).is_none());
+        // (b) n^2 is C-finite of order 3 ⇒ its (3,0) absence is false.
+        let sq: Vec<BigInt> = (0..16i64).map(|n| BigInt::from(n * n)).collect();
+        assert!(verify(jeff_cert::recurrence_absence_certificate(sq, 3, 0)).is_none());
+        // (c) underdetermined (too few samples for the unknown count) ⇒ cannot exclude.
+        assert!(verify(jeff_cert::recurrence_absence_certificate(ints(&[1, 2, 3, 4]), 2, 2)).is_none());
+    }
+
+    #[test]
+    fn absence_certificate_labeled() {
+        // Uncomputability boundary: every absence certificate carries (class, Θ); an
+        // unindexed "structureless" claim is impossible — the label is intrinsic.
+        let s: Vec<BigInt> = (0..30i64).map(BigInt::from).collect();
+        let cert = jeff_cert::recurrence_absence_certificate(s, 2, 1);
+        assert!(cert.evidence.is_absence());
+        let (class, theta) = cert.evidence.absence_label().expect("absence cert must be labeled");
+        assert_eq!(class, "D-finite");
+        assert!(theta.contains("order<=2") && theta.contains("degree<=1") && theta.contains("N=30"));
+        assert!(
+            cert.obligation.claim.contains("class=D-finite") && cert.obligation.claim.contains("theta="),
+            "obligation must embed the (class, Θ) label"
+        );
+        // a non-absence evidence is never mistaken for a labeled absence.
+        assert!(Evidence::PolynomialIdentity { poly: Poly::zero() }.absence_label().is_none());
+        assert!(!Evidence::PolynomialIdentity { poly: Poly::zero() }.is_absence());
     }
 }

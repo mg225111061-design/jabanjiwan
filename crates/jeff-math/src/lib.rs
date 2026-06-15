@@ -33,6 +33,7 @@ pub mod planted;
 pub mod poly;
 pub mod pqc;
 pub mod prony;
+pub mod recurrence;
 pub mod recovery;
 pub mod ratfun;
 pub mod riccati;
