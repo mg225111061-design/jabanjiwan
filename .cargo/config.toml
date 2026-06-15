@@ -1,0 +1,15 @@
+# Stage 18.1 — native-default build profile (machine-specific).
+#
+# This container's CPU has AVX-512F/DQ/BW/VL + AVX2 + FMA + AMX (probed in Stage 17.1),
+# but the generic x86-64 default target emits NO hardware FMA/AVX: the peak-FLOPS probe
+# measured ~0.7 GFLOP/s default vs ~9.4 GFLOP/s with target-cpu=native (~13×). Building
+# native is therefore the single biggest *free* constant-factor win on this machine, so it
+# is the documented default here. Every §C speed number is "vs our own default build" — NOT
+# an incumbent claim (FFTW/OpenBLAS/cuBLAS are absent).
+#
+# PORTABILITY (honest): a native binary uses instructions specific to THIS CPU and will not
+# run on a machine without them. This config is correct for this fixed container; on other
+# hardware, remove it or set the appropriate target-cpu. FP semantics are unchanged (Rust
+# does not auto-contract to FMA), so all bit-exact tests still hold.
+[build]
+rustflags = ["-C", "target-cpu=native"]
