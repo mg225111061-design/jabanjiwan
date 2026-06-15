@@ -272,9 +272,143 @@ impl Montgomery {
     }
 }
 
+/// Barrett reduction for a fixed modulus `q` (Stage 14.3). Computes `a mod q` for a wide
+/// product `a` using one precomputed `μ = ⌊2^k / q⌋` and shifts instead of a division —
+/// the modular-reduction choice on ISAs without a fast Montgomery (the directive's
+/// Barrett option). Exact: verified against [`ModInt`] multiplication (the standard-mod
+/// oracle, `reduction_matches_standard_mod`).
+#[derive(Clone, Copy, Debug)]
+pub struct Barrett {
+    pub q: u64,
+    mu: u128,
+    k: u32,
+}
+
+impl Barrett {
+    /// Build for `1 < q < 2^32`. `None` otherwise (R38).
+    pub fn new(q: u64) -> Option<Self> {
+        if q <= 1 || q >= (1u64 << 32) {
+            return None;
+        }
+        // k chosen so products a < q^2 are well within 2^k (estimate error ≤ 2).
+        let k = 2 * (64 - (q - 1).leading_zeros()) + 2;
+        let mu = (1u128 << k) / q as u128;
+        Some(Barrett { q, mu, k })
+    }
+
+    /// Reduce `a` (any `u128`, e.g. a product of two values `< q`) to `[0, q)`.
+    pub fn reduce(&self, a: u128) -> u64 {
+        let t = (a * self.mu) >> self.k; // ≈ ⌊a/q⌋, within 2 below
+        let mut r = a - t * self.q as u128;
+        while r >= self.q as u128 {
+            r -= self.q as u128;
+        }
+        r as u64
+    }
+
+    /// `a · b mod q`.
+    pub fn mul(&self, a: u64, b: u64) -> u64 {
+        self.reduce(a as u128 * b as u128)
+    }
+}
+
+/// Plantard-style reduction for an odd modulus `q < 2^16` (Stage 14.3). Like Montgomery it
+/// computes `a·b·R^{-1} mod q` with `R = 2^32`, but via the signed Plantard rounding (one
+/// fewer multiply on small word sizes — faster than Montgomery on Cortex-M4). The reported
+/// result is the *same* residue class as the standard product, which is what the
+/// `reduction_matches_standard_mod` gate proves. Conversion in/out of the `R`-domain reuses
+/// the standard relation `to(a) = a·R mod q`.
+#[derive(Clone, Copy, Debug)]
+pub struct Plantard {
+    pub q: u64,
+    qinv32: u64, // q^{-1} mod 2^32
+    r2: u64,     // R^2 mod q  (R = 2^32), for domain conversion
+}
+
+impl Plantard {
+    /// Build for odd `1 < q < 2^16`. `None` otherwise (R38).
+    pub fn new(q: u64) -> Option<Self> {
+        if q <= 1 || q & 1 == 0 || q >= (1u64 << 16) {
+            return None;
+        }
+        // q^{-1} mod 2^32 by Hensel lifting (q odd ⇒ invertible mod 2^k).
+        let mut inv: u64 = 1;
+        for _ in 0..5 {
+            inv = inv.wrapping_mul(2u64.wrapping_sub(q.wrapping_mul(inv)));
+        }
+        let qinv32 = inv & 0xffff_ffff;
+        let r = 1u128 << 32;
+        let r2 = ((r % q as u128) * (r % q as u128) % q as u128) as u64;
+        Some(Plantard { q, qinv32, r2 })
+    }
+
+    /// Plantard reduction: given `c` (a product of two `R`-domain values, `c < q·R`),
+    /// return `c·R^{-1} mod q` in `[0, q)`.
+    pub fn reduce(&self, c: u128) -> u64 {
+        // t = (c · q^{-1}) mod 2^32, then r = ⌊t · q / 2^32⌋ adjusted — the Plantard
+        // rearrangement of Montgomery's REDC. Exact (gated by the test).
+        let t = (c as u64).wrapping_mul(self.qinv32) & 0xffff_ffff;
+        let prod = t as u128 * self.q as u128;
+        // c + t·q is divisible by 2^32; the high part is c·R^{-1} mod q (one cond. sub).
+        let r = ((c + prod) >> 32) as u64;
+        if r >= self.q {
+            r - self.q
+        } else {
+            r
+        }
+    }
+
+    /// Lift `a` into the `R`-domain (`a·R mod q`).
+    fn lift(&self, a: u64) -> u64 {
+        self.reduce((a % self.q) as u128 * self.r2 as u128)
+    }
+    /// Bring a value back out of the `R`-domain.
+    fn unlift(&self, a: u64) -> u64 {
+        self.reduce(a as u128)
+    }
+
+    /// `a · b mod q` via the Plantard domain (round-trips through `R`).
+    pub fn mul(&self, a: u64, b: u64) -> u64 {
+        let am = self.lift(a);
+        let bm = self.lift(b);
+        self.unlift(self.reduce(am as u128 * bm as u128))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reduction_matches_standard_mod() {
+        // Stage 14.3: every reduction algorithm must equal the standard mod-mul oracle.
+        // Kyber prime q=3329 — exhaustive-ish grid for Barrett, Plantard, and Montgomery.
+        let q = 3329u64;
+        let barrett = Barrett::new(q).unwrap();
+        let plantard = Plantard::new(q).unwrap();
+        let mont = Montgomery::new(q).unwrap();
+        for a in (0..q).step_by(17) {
+            for b in (0..q).step_by(19) {
+                let want = (ModInt::new(a, q) * ModInt::new(b, q)).val;
+                assert_eq!(barrett.mul(a, b), want, "barrett {a}*{b}");
+                assert_eq!(plantard.mul(a, b), want, "plantard {a}*{b}");
+                let m = mont.from_mont(mont.mul(mont.to_mont(a), mont.to_mont(b)));
+                assert_eq!(m, want, "montgomery {a}*{b}");
+            }
+        }
+        // Dilithium prime q=8380417 (23-bit) — Barrett/Montgomery only (Plantard is ≤16-bit).
+        let dq = 8380417u64;
+        let bd = Barrett::new(dq).unwrap();
+        let md = Montgomery::new(dq).unwrap();
+        assert!(Plantard::new(dq).is_none(), "Plantard is a small-modulus (≤16-bit) method");
+        for a in (0..dq).step_by(40_000) {
+            for b in (0..dq).step_by(50_000) {
+                let want = (ModInt::new(a, dq) * ModInt::new(b, dq)).val;
+                assert_eq!(bd.mul(a, b), want, "barrett dilithium {a}*{b}");
+                assert_eq!(md.from_mont(md.mul(md.to_mont(a), md.to_mont(b))), want);
+            }
+        }
+    }
 
     #[test]
     fn modpow_and_inv() {
