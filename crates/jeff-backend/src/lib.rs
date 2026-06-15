@@ -16,6 +16,7 @@ pub mod amx;
 pub mod cost;
 pub mod cpuprobe;
 pub mod measure;
+pub mod parallel;
 pub mod simd;
 pub mod spacetime;
 
