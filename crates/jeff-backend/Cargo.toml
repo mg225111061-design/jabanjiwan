@@ -8,5 +8,8 @@ description = "Layer B backend (CLAUDE.md PART C / 10.7): SIMD/vectorization (sp
 [dependencies]
 jeff-math = { workspace = true }
 
+[dev-dependencies]
+num-bigint = { workspace = true }
+
 [lints]
 workspace = true
