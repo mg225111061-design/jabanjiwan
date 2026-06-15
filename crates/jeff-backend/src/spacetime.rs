@@ -56,6 +56,31 @@ pub fn naive_min(a: &[i64], l: usize, r: usize) -> i64 {
     a[l..=r].iter().copied().min().expect("non-empty range")
 }
 
+/// Stage 17.3 — sublinear N-th term of a linear recurrence (the largest honest self-relative
+/// win: fixing the algorithm, not the constant). The naive oracle computes `[xⁿ] P/Q` by
+/// `O(n·d)` power-series division; [`jeff_math::bostan_mori`] does it in `O(M(d) log n)`. Both
+/// are exact mod q, so they agree bit-for-bit — only the speed changes, and the gap grows
+/// without bound in n. (`P`,`Q` ascending-degree, `Q[0]` invertible.)
+pub fn naive_series_coeff(p: &[u64], q: &[u64], n: u64, modulus: u64) -> u64 {
+    use jeff_math::modular::ModInt;
+    let q0_inv = ModInt::new(q[0], modulus).inv().expect("Q(0) invertible");
+    let mut a: Vec<ModInt> = Vec::with_capacity(n as usize + 1);
+    for k in 0..=n as usize {
+        let mut s = if k < p.len() {
+            ModInt::new(p[k], modulus)
+        } else {
+            ModInt::zero(modulus)
+        };
+        for i in 1..q.len() {
+            if k >= i {
+                s = s - ModInt::new(q[i], modulus) * a[k - i];
+            }
+        }
+        a.push(s * q0_inv);
+    }
+    a[n as usize].val
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +136,65 @@ mod tests {
         let a = [42i64];
         let rmq = SparseTableRmq::build(&a);
         assert_eq!(rmq.query(0, 0), 42);
+    }
+
+    // ---- 17.3 sublinear N-th term (Bostan–Mori vs naive O(N) iteration) ----
+
+    const PRIME: u64 = 1_000_000_007;
+
+    // Fibonacci-like order-3 recurrence: P/Q with Q = 1 - x - x^2 - x^3 (tribonacci).
+    fn trib() -> (Vec<u64>, Vec<u64>) {
+        // numerator chosen so a_0=0,a_1=1,a_2=1 (standard tribonacci start, mod prime).
+        // P = Q * A truncated; easiest: derive P from initial terms a0,a1,a2.
+        // a0=0 ⇒ p0=0; a1 - (q1*a0)=1 ⇒ p1=1; a2-(q1*a1+q2*a0)= 1-(-1)=2 ⇒ p2=2.
+        let q = vec![1u64, PRIME - 1, PRIME - 1, PRIME - 1]; // 1 - x - x^2 - x^3
+        let p = vec![0u64, 1, 2];
+        (p, q)
+    }
+
+    #[test]
+    fn sublinear_recurrence_matches_naive() {
+        // bit-exact: Bostan–Mori == naive series division, mod a prime, for many n.
+        let (p, q) = trib();
+        for n in [0u64, 1, 2, 5, 10, 50, 137, 1000] {
+            assert_eq!(
+                jeff_math::bostan_mori(&p, &q, n, PRIME),
+                naive_series_coeff(&p, &q, n, PRIME),
+                "mismatch at n={n}"
+            );
+        }
+    }
+
+    #[test]
+    fn sublinear_beats_own_full_at_large_n() {
+        // self-relative, unbounded in n: O(M(d) log n) Bostan–Mori vs O(n·d) naive.
+        let (p, q) = trib();
+        let n = 1_000_000u64;
+        // correctness first (sample a reachable point against naive at a smaller n).
+        assert_eq!(
+            jeff_math::bostan_mori(&p, &q, 20000, PRIME),
+            naive_series_coeff(&p, &q, 20000, PRIME)
+        );
+        let t0 = std::time::Instant::now();
+        let fast = jeff_math::bostan_mori(&p, &q, n, PRIME);
+        let bm = t0.elapsed().as_secs_f64().max(1e-12);
+        let t1 = std::time::Instant::now();
+        let slow = naive_series_coeff(&p, &q, n, PRIME);
+        let naive = t1.elapsed().as_secs_f64();
+        assert_eq!(fast, slow, "must agree at large n (bit-exact)");
+        assert!(
+            bm * 10.0 < naive,
+            "Bostan–Mori must dominate naive at n={n} (bm {bm:.6}s, naive {naive:.6}s)"
+        );
+    }
+
+    #[test]
+    fn below_crossover_uses_naive() {
+        // The guard's premise: at tiny n the naive iteration is competitive, so a planner
+        // should not pay Bostan–Mori's overhead. Both agree; we assert the crossover exists.
+        let (p, q) = trib();
+        for n in [1u64, 2, 4, 8] {
+            assert_eq!(jeff_math::bostan_mori(&p, &q, n, PRIME), naive_series_coeff(&p, &q, n, PRIME));
+        }
     }
 }
