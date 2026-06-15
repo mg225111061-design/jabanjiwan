@@ -134,3 +134,21 @@ nullspace problem**: `s_n = Σ c_j ξ_j^n` annihilated by a constant-coefficient
   flagged (`near_mode_instability_flagged`).
 - Certificate: **exact** (ℚ Hankel) / **interval** (condition-number bound). Coverage in two
   directions (signal recovery + series acceleration). 5 tests. Workspace green, clippy clean.
+
+---
+
+## §C.36 — structure-discovery meta-selector — **BUILT** (the 45→90 engine)
+
+`jeff_math::selector`. Extends the BBP gate to *all* fold families: cheaply probe → classify
+(`CFinite`/`LowRank`/`Sparse`/`Structureless`) → dispatch the right fold, or absence-certify when no
+structure. Not a new kernel — *knowing which kernel to use and honestly giving up when none applies*.
+
+- Probes: `hutchinson_trace` (Rademacher, exact on diagonals), `numerical_rank` (singular values,
+  tol 1e-5 to skip the iterative SVD's ~1e-6 noise — stated), `count_nnz` (sparsity),
+  `hankel_recurrence` (C-finite). `classify_matrix`/`classify_sequence`/`dispatch_matrix`.
+- C-finite seq → CFinite{order:2} (Fibonacci); sparse → Sparse; rank-1 → LowRank; full-rank random
+  → **AbsenceCertificate** (defer). Certificate: **probabilistic** (probing/union-bound) for the
+  negative; **exact** for detected structure (the chosen fold carries its own cert).
+- Cost `O(n·probes)` ≪ full fit `O(n²·r)` (`meta_selector_cheaper_than_full`). 5 tests:
+  `structure_taxonomy_classified`, `probing_dispatches_correct_fold`, `no_structure_certified_absent`,
+  `hutchinson_trace_accurate`, `meta_selector_cheaper_than_full`. Workspace green, clippy clean.
