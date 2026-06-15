@@ -144,6 +144,9 @@ version = "0.1.0"
 [[package]]
 name = "jeff-backend"
 version = "0.1.0"
+dependencies = [
+ "jeff-math",
+]
 
 [[package]]
 name = "jeff-barvinok"

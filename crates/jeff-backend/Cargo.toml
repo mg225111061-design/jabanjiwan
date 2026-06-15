@@ -3,9 +3,10 @@ name = "jeff-backend"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-backend (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Layer B backend (CLAUDE.md PART C / 10.7): SIMD/vectorization (speed, never the answer), Amdahl-p instrumentation, baseline-comparison harness, PGO cost-model hooks. Register allocation / instruction selection are delegated to LLVM."
 
 [dependencies]
+jeff-math = { workspace = true }
 
 [lints]
 workspace = true
