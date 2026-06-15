@@ -82,5 +82,91 @@ don't-know. Path (ii): built-in guesser + exact rational verification, no SDP so
 
 ---
 
-## §C.30 — BBP / Tracy–Widom soundness gate
-_(pending — Stage 30)_
+## §C.30 — BBP / Tracy–Widom soundness gate (fold-or-defer meta-gate)
+
+Port of reference kernel #4 (`kernels/k4_bbp_gate.py`) to `jeff_math::bbp` + the dispatch wiring in
+`jeff_collapse_arith::bbp_gate`. **A meta-gate, not a collapse**: it decides whether to *attempt* a
+low-rank fold and emits a **quantitative ε-level absence certificate** when there is no structure.
+**Probabilistic, never exact**; the ε is **valid only under iid-Gaussian noise** — void under
+heavy-tailed / correlated / non-Gaussian noise (carried in `EPS_MODEL_NOTE` on every certificate).
+
+### (a) RMT theory reproduced (n=300, m=200, γ=0.667)
+| quantity | JEFF | reference |
+|---|---|---|
+| MP top edge `1+√γ` | **1.8165** | 1.8165 |
+| BBP threshold `θ* = γ^{1/4}` | **0.9036** | 0.9036 |
+| Tracy–Widom scale `n^{-2/3}` | **0.0223** | 0.0223 |
+
+Top singular value via power iteration on `AᵀA` (`O(nnz)`/iter) — `top_singular_value_matches_known`
+(diag(3,2)→3). Tests: `mp_edge_reproduced`, `bbp_threshold_reproduced`, `tw_scale_order_correct`.
+
+### (b) Gate decisions + BBP transition
+Calibrated threshold (1−ε=0.99 quantile of the pure-noise top sv) = **1.8553**. Detection
+probability rises **sharply through θ*=0.9036**:
+
+| θ | 0.0 | 0.5 | 0.81 | **0.904 (θ*)** | 0.99 | 1.30 | 2.00 |
+|---|---|---|---|---|---|---|---|
+| P(detect) | 0.013 | 0.013 | 0.013 | **0.050** | 0.175 | 1.000 | 1.000 |
+| mean top sv > MP edge? | no | no | no | no | yes | yes | yes |
+
+Pure noise → **DEFER** (top sv 1.82 < 1.855); noise + strong rank-3 → **FOLD** (top sv 2.99 > 1.855,
+separated from bulk). Tests: `pure_noise_defers`, `noise_plus_rank3_folds`,
+`bbp_transition_sharp_at_threshold`.
+
+### (c) ε honesty (false-positive rate)
+On 1000 pure-noise trials the empirical FOLD (false-positive) rate = **0.0030** vs target ε=0.01
+(reference 0.018). Same order as ε; **slightly conservative** here (vs the reference's slightly
+anti-conservative 0.018). Honest difference: different RNG, calibration trial count (300), and
+power-iteration vs the reference's exact-SVD calibration — stated, not silently matched (rule 6).
+Test `fp_rate_honors_eps` asserts the rate stays within a few × ε.
+
+### (d) HONEST_DEFER dispatch wiring
+`jeff_collapse_arith::bbp_gate::low_rank_gate` consults the gate before a low-rank fold: structure
+present → `AttemptFold` (the real fold runs, with its own exact certificate); absence →
+`CollapseOutcome::Defer(BarrierTag::BelowDetectionThreshold)` carrying the ε-absence note — wired
+into the same `BarrierTag` dispatch the Fourier detectors use. Tests: `gate_wired_into_dispatch`,
+`gate_prevents_wasted_lowrank_fit` (the `O(nnz)` gate primitive is measurably cheaper than a full
+SVD fit, and on noise the gate defers ⇒ the fit is skipped entirely). **No regression**:
+verifier 49/0, workspace 471/0, clippy `--all-targets -D warnings` clean.
+
+**Cost.** Gate primitive `O(nnz)` (a few power iterations) vs a full low-rank fit `O(n²·r)`:
+**infinite expected saving under the null** (no structure ⇒ defer ⇒ fit skipped); **ratio 1** when
+structure is present (the fit runs anyway). Not an asymptotic speed collapse.
+
+**Label.** *Not a collapse — a meta-gate emitting a quantitative absence certificate.
+Probabilistic (explicit ε), never exact, assumes iid-Gaussian noise (ε void under heavy tails). The
+hidden-structure precondition detector for the 45→90 coverage push.*
+
+---
+
+# Unified closing — §C.29–30
+
+| stage | kernel | role | nature | certificate |
+|---|---|---|---|---|
+| **29** | #5 rational SOS | precondition **prover** (`prove_nonneg`) | verification-power | **exact** rational SOS (LDLᵀ pivots ≥ 0); SOS ⇒ certify, else HONEST_DEFER |
+| **30** | #4 BBP/TW | fold-or-defer **gate** (`low_rank_gate`) | verification-power | **probabilistic** ε-absence (Gaussian-only; void under heavy tails) |
+
+Both are **verification-power, not speed collapse** (29 = precondition prover that lets other folds
+fire safely; 30 = fold-or-defer gate that prevents wasted low-rank fits). They sit **on top of** the
+Stage 26–28 honesty split — **dense = parity ceiling** (Stage 27 GEMM ~50% of OpenBLAS-1T, Stage
+28.1 FFT radix-2 ~72–85% of pocketfft; "reached X%", never "beat") and **structured = asymptotic
+infinite ratio, Ω(N)-safe** (Stage 26 C-finite/holonomic divergent ratios, Stage 28.2 2D sparse
+n/k crossover) — strengthening JEFF's verification infrastructure rather than its speed frontier.
+
+Both kernels reproduce the Python reference's certification / measured behavior: #5 the
+certification *outcomes* (p1/p2 certified, Motzkin/indefinite defer; exact pivots cleaner than the
+reference's numerical-SDP pivots — stated), #4 the RMT constants exactly and the FP rate to the same
+order (0.0030 vs ref 0.018, both ~ε).
+
+### Honest premise/limit notes
+- **Stage 29**: there was **no pre-existing `prove_nonneg` stub** in this repo — the capability was
+  *added*, not a stub *replaced* (the directive's framing corrected, value identical). SDP path (ii)
+  chosen: built-in diagonal guesser + exact rational verification, **no SDP solver linked** (R5;
+  cvxpy absent). Sound but **incomplete** (Motzkin).
+- **Stage 30**: **probabilistic** (ε), never exact; ε **void** under non-Gaussian/heavy-tailed/
+  correlated noise. FP rate is finite-sample and calibration-dependent.
+
+### Deferred (not done this round, per directive)
+- #1 displacement-rank and #7 Krylov → a later coverage-extension stage.
+- Stage 27 GEMM → 80%: needs per-µarch hand assembly (profiled bottleneck), a separate effort; dense
+  remains a regime JEFF does not win (parity is the ceiling).

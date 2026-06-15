@@ -10,6 +10,7 @@
 //! (MIT/Apache), never GMP/`rug` (LGPL).
 
 pub mod anytime;
+pub mod bbp;
 pub mod cfinite;
 pub mod complex;
 pub mod dilithium;
