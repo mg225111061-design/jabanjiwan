@@ -59,6 +59,46 @@ pub fn gemm_vectorized(a: &[f64], b: &[f64], m: usize, k: usize, n: usize) -> Ve
     c
 }
 
+/// Cache-blocked GEMM (Stage 12.1 — the BLIS-style loop nest, scaled to this environment).
+/// Tiles `i`, `p`, `j` for cache reuse, but for every output `C[i,j]` the sum over `p` is
+/// still accumulated in increasing-`p` order — identical to [`gemm_scalar`] — so the result
+/// is **bit-for-bit** the oracle's, floats included (no reassociation). Speed changes, the
+/// answer never does (CLAUDE.md PART C). NOTE: a comparison against a tuned incumrent
+/// (OpenBLAS/MKL) is not made here — they are not present in this environment; only
+/// correctness is asserted and any timing is measured, never claimed.
+pub fn gemm_blocked(a: &[f64], b: &[f64], m: usize, k: usize, n: usize) -> Vec<f64> {
+    const BI: usize = 64;
+    const BP: usize = 64;
+    const BJ: usize = 64;
+    let mut c = vec![0.0; m * n];
+    let mut ii = 0;
+    while ii < m {
+        let i_end = (ii + BI).min(m);
+        let mut pp = 0;
+        while pp < k {
+            let p_end = (pp + BP).min(k);
+            let mut jj = 0;
+            while jj < n {
+                let j_end = (jj + BJ).min(n);
+                for i in ii..i_end {
+                    for p in pp..p_end {
+                        let aip = a[i * k + p];
+                        let brow = &b[p * n..p * n + n];
+                        let crow = &mut c[i * n..i * n + n];
+                        for j in jj..j_end {
+                            crow[j] += aip * brow[j];
+                        }
+                    }
+                }
+                jj += BJ;
+            }
+            pp += BP;
+        }
+        ii += BI;
+    }
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,5 +130,19 @@ mod tests {
         let a: Vec<f64> = (0..m * k).map(|i| (i % 4) as f64).collect();
         let b: Vec<f64> = (0..k * n).map(|i| (i % 3) as f64).collect();
         assert_eq!(gemm_vectorized(&a, &b, m, k, n), gemm_scalar(&a, &b, m, k, n));
+    }
+
+    #[test]
+    fn simd_preserves_result_blocked_bit_exact() {
+        // The cache-blocked GEMM equals the scalar oracle BIT-FOR-BIT, even on random
+        // floats — because it keeps the per-output k-accumulation order (P0: speed never
+        // changes the answer). Sizes that straddle the 64-block boundary.
+        let mut rng = Rng::new(0xB10C);
+        for (m, k, n) in [(1usize, 1, 1), (5, 6, 7), (64, 64, 64), (70, 130, 65)] {
+            let a: Vec<f64> = (0..m * k).map(|_| rng.gaussian()).collect();
+            let b: Vec<f64> = (0..k * n).map(|_| rng.gaussian()).collect();
+            let oracle = gemm_scalar(&a, &b, m, k, n);
+            assert_eq!(gemm_blocked(&a, &b, m, k, n), oracle, "blocked != scalar at {m}x{k}x{n}");
+        }
     }
 }
