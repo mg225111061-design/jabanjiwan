@@ -219,6 +219,12 @@ version = "0.1.0"
 [[package]]
 name = "jeff-collapse-tensor"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-math",
+ "jeff-span",
+ "jeff-verify",
+]
 
 [[package]]
 name = "jeff-core-ir"

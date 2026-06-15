@@ -953,6 +953,26 @@ impl Checker for KernelChecker {
                     VerifyResult::Invalid
                 }
             }
+
+            // ---- Stage 7: tensor-network contraction (exact vs naive) ----
+            Evidence::TensorContraction { tensors, dim, n_indices, result } => {
+                if *dim == 0 || dim.checked_pow(*n_indices as u32).is_none() {
+                    return VerifyResult::Invalid;
+                }
+                let net: Vec<jeff_math::tensornet::Tensor> = tensors
+                    .iter()
+                    .map(|(ix, data)| jeff_math::tensornet::Tensor {
+                        indices: ix.clone(),
+                        data: data.clone(),
+                    })
+                    .collect();
+                // independent exact oracle: the naive full contraction.
+                if jeff_math::tensornet::contract_naive(&net, *dim, *n_indices) == *result {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Unknown,
         }
     }
@@ -1020,7 +1040,8 @@ impl Checker for DefaultRegistry {
             | Evidence::Linearity { .. }
             | Evidence::Junta { .. }
             | Evidence::ListDecode { .. }
-            | Evidence::NoiseSensitivity { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::NoiseSensitivity { .. }
+            | Evidence::TensorContraction { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -1080,6 +1101,7 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::Junta { .. } => "wht-influence-junta",
         Evidence::ListDecode { .. } => "rs-agreement-exact",
         Evidence::NoiseSensitivity { .. } => "wht-noise-sensitivity",
+        Evidence::TensorContraction { .. } => "tensor-naive-replay",
     }
 }
 
@@ -1626,6 +1648,24 @@ mod tests {
         let parity = vec![1.0, -1.0, -1.0, 1.0];
         let ev = Evidence::LowDegree { table: parity, k: 1, tail_bound: 0.1 };
         assert!(verify(cert(ev)).is_none());
+    }
+
+    // ===== Stage 7: tensor-network contraction certificate =====
+
+    #[test]
+    fn tensor_contraction_valid_and_false_rejected() {
+        let tensors = vec![
+            (vec![0usize, 1], vec![1i64, 2, 3, 4]),
+            (vec![1usize, 2], vec![5i64, 6, 7, 8]),
+            (vec![2usize, 0], vec![1i64, 0, 1, 1]),
+        ];
+        // the true contraction is 91 (verified by the naive oracle).
+        let good = Evidence::TensorContraction { tensors: tensors.clone(), dim: 2, n_indices: 3, result: 91 };
+        assert_eq!(good.cert_class(), jeff_cert::CertClass::Exact);
+        assert!(verify(cert(good)).is_some());
+        // false_contraction_rejected: a wrong scalar must be rejected by the oracle.
+        let bad = Evidence::TensorContraction { tensors, dim: 2, n_indices: 3, result: 112 };
+        assert!(verify(cert(bad)).is_none());
     }
 
     // ===== Verifier-integrity tripwires (MIDBUILD_AUDIT §A.1) =====

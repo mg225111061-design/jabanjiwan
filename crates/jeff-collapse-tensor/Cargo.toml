@@ -3,9 +3,13 @@ name = "jeff-collapse-tensor"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-collapse-tensor (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Layer 4: tensor-network contraction (CLAUDE.md PART E / 10.6). Treewidth-aware contraction with an exact naive-replay certificate; defers on treewidth blow-up."
 
 [dependencies]
+jeff-math = { workspace = true }
+jeff-cert = { workspace = true }
+jeff-verify = { workspace = true }
+jeff-span = { workspace = true }
 
 [lints]
 workspace = true

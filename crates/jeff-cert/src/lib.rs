@@ -623,6 +623,17 @@ pub enum Evidence {
         rho: f64,
         ns_bound: f64,
     },
+
+    // ---- Stage 7: tensor-network contraction (exact, no tol) ----
+    /// A closed tensor network `tensors` (each `(index labels, row-major data)`) over an
+    /// index alphabet of size `dim` with `n_indices` distinct indices contracts to the
+    /// scalar `result`. Checker recomputes the **naive full contraction** and compares.
+    TensorContraction {
+        tensors: Vec<(Vec<usize>, Vec<i64>)>,
+        dim: usize,
+        n_indices: usize,
+        result: i64,
+    },
 }
 
 impl Evidence {
@@ -705,6 +716,8 @@ impl Evidence {
             | Evidence::Linearity { .. }
             | Evidence::Junta { .. }
             | Evidence::NoiseSensitivity { .. } => CertClass::HighProbability,
+            // Stage 7: exact contraction vs naive.
+            Evidence::TensorContraction { .. } => CertClass::Exact,
         }
     }
 }

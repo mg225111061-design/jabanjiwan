@@ -31,6 +31,7 @@ pub mod recovery;
 pub mod ratfun;
 pub mod riccati;
 pub mod streaming;
+pub mod tensornet;
 
 pub use gf2::{Gf2Matrix, Gf2Vec};
 pub use hyper::{HyperTerm, LinForm};
