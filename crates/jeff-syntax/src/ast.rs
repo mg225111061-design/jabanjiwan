@@ -310,6 +310,9 @@ pub enum ExprKind {
     },
     Own(Box<Expr>),
     Move(Box<Expr>),
+    /// Array literal `[e0, e1, ...]` (Stage 11 surface-wiring): the data argument to a
+    /// stdlib kernel call. Nested arrays express matrices.
+    Array(Vec<Expr>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

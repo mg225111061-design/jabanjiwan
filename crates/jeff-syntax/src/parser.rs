@@ -1078,6 +1078,23 @@ impl Parser {
                     span,
                 }
             }
+            TokKind::Sym(Sym::LBracket) => {
+                // Array literal `[e0, e1, ...]` (Stage 11): kernel data argument.
+                self.advance();
+                let mut elems = Vec::new();
+                while !self.is_sym(Sym::RBracket) && !self.at_eof() {
+                    elems.push(self.parse_expr());
+                    if !self.eat_sym(Sym::Comma) {
+                        break;
+                    }
+                }
+                self.expect_sym(Sym::RBracket, "to close array literal");
+                let span = start.merge(self.span());
+                Expr {
+                    kind: ExprKind::Array(elems),
+                    span,
+                }
+            }
             other => {
                 self.error(format!("expected an expression, found {other:?}"));
                 self.advance();

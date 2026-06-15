@@ -5,6 +5,8 @@
 //! residual, its region runs the *original* work. The exact evaluator (jeff-jlir) is
 //! the universal executor and the P0 equivalence oracle.
 
+pub mod kernels;
+
 use jeff_cert::{BarrierTag, VerifiedCertificate};
 use jeff_core_ir::{lower, CoreFn};
 use jeff_jlir::{JlirRegion, Origin};
@@ -58,11 +60,17 @@ pub struct CompiledFn {
 #[derive(Clone, Debug)]
 pub struct Artifact {
     pub funcs: Vec<CompiledFn>,
+    /// Surface-wired stdlib kernel calls compiled at comptime (Stage 11).
+    pub kernels: Vec<kernels::KernelFn>,
 }
 
 impl Artifact {
     pub fn func(&self, name: &str) -> Option<&CompiledFn> {
         self.funcs.iter().find(|f| f.name == name)
+    }
+    /// Look up a surface-wired kernel function by name.
+    pub fn kernel(&self, name: &str) -> Option<&kernels::KernelFn> {
+        self.kernels.iter().find(|k| k.name == name)
     }
 }
 
@@ -78,13 +86,29 @@ pub fn compile(src: &str, opts: &Options) -> Result<Artifact, Vec<Diagnostic>> {
     if taint_diags.iter().any(Diagnostic::is_error) {
         return Err(taint_diags);
     }
-    let ir = lower(&program)?;
+
+    // Stage 11: split out surface-wired kernel-call functions. They carry array/matrix
+    // literal data the integer pipeline does not lower, so they are compiled at comptime
+    // (the auto collapse trigger) and removed from the program before `lower`.
+    let mut kernel_fns = Vec::new();
+    let mut rest = program.clone();
+    rest.items.retain(|item| match item {
+        jeff_syntax::ast::Item::Fn(f) if kernels::is_kernel_fn(f) => {
+            if let Some(kf) = kernels::try_kernel_fn(f) {
+                kernel_fns.push(kf);
+            }
+            false // remove from the integer pipeline
+        }
+        _ => true,
+    });
+
+    let ir = lower(&rest)?;
     let budget = SaturationBudget::default();
     let mut funcs = Vec::new();
     for f in &ir.funcs {
         funcs.push(compile_fn(f, budget, opts));
     }
-    Ok(Artifact { funcs })
+    Ok(Artifact { funcs, kernels: kernel_fns })
 }
 
 fn compile_fn(f: &CoreFn, budget: SaturationBudget, opts: &Options) -> CompiledFn {
@@ -240,6 +264,26 @@ pub fn collapse_report(art: &Artifact) -> String {
             CompileStatus::Pending { recognized, stage } => format!(
                 "fn {:<16} deferred   recognized={:?}; collapser pending ({})",
                 cf.name, recognized, stage
+            ),
+        };
+        out.push_str(&line);
+        out.push('\n');
+    }
+    // Stage 11: surface-wired kernel calls (compiled at comptime).
+    for kf in &art.kernels {
+        let line = match &kf.status {
+            kernels::KernelStatus::Collapsed { checker, cert_class } => format!(
+                "fn {:<16} collapsed  kernel={}  cert=ok({}; class={})",
+                kf.name,
+                kf.kernel,
+                checker,
+                cert_class.as_str()
+            ),
+            kernels::KernelStatus::Deferred { tag } => format!(
+                "fn {:<16} deferred   HONEST_DEFER[{}]  ({})",
+                kf.name,
+                tag.as_str(),
+                tag.rationale()
             ),
         };
         out.push_str(&line);

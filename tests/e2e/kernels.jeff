@@ -1,0 +1,36 @@
+module examples.kernels
+
+# Stage 11 surface-wiring witness (CLAUDE.md PART G). Each function body is a call to a
+# stdlib kernel with literal data; the compiler recognizes it, extracts the constant
+# data, and runs the matching collapser at compile time (the auto collapse trigger).
+# Structure present -> verified collapse with a real certificate class; structure absent
+# -> honest defer with a barrier tag.
+
+# Prony: two clean exponential modes (2*0.9^t + 0.5^t) -> exact recurrence.
+fn prony_demo():
+    prony([3.0, 2.3, 1.87, 1.583, 1.3747, 1.21223, 1.078507, 0.9644063, 0.86484067, 0.776794103], 2)
+
+# Prony on white noise -> no low-order recurrence -> honest defer.
+fn prony_noise():
+    prony([0.4, -1.2, 0.7, 2.1, -0.3, 1.5, -2.0, 0.1], 2)
+
+# Sparse FFT: a constant signal is 1-sparse in frequency (only the DC bin) -> collapse.
+fn sparse_fft_demo():
+    sparse_fft([1.0, 1.0, 1.0, 1.0], 1)
+
+# Welch/ETF: the Mercedes-Benz frame (3 unit vectors in R^2 at 120 degrees) is an ETF.
+# Each row is a vector (m=3 vectors, n=2 dimensions; an ETF needs m>n).
+fn welch_etf_demo():
+    welch_etf([[1.0, 0.0], [-0.5, 0.8660254037844386], [-0.5, -0.8660254037844386]])
+
+# Planted clique: a 4-clique on {0,1,2,3} planted in a 6-vertex graph -> exact clique.
+fn planted_clique_demo():
+    planted_clique([[0,1,1,1,1,0],[1,0,1,1,0,1],[1,1,0,1,0,0],[1,1,1,0,0,0],[1,0,0,0,0,0],[0,1,0,0,0,0]], 4)
+
+# Persistent homology: two well-separated clusters -> 2 features above the noise band.
+fn persistent_homology_demo():
+    persistent_homology([[0.0,0.1,10.0,10.0],[0.1,0.0,10.0,10.0],[10.0,10.0,0.0,0.1],[10.0,10.0,0.1,0.0]], 1.0)
+
+# Reed-Solomon list decoding over GF(97): p(x)=3+2x+x^2 with 2 errors -> recovered exactly.
+fn list_decode_demo():
+    list_decode([1,2,3,4,5,6,7], [6,16,18,27,47,51,66], 3, 97)

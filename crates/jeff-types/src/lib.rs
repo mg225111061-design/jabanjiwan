@@ -223,6 +223,11 @@ fn collect_expr_flows(e: &Expr, out: &mut Vec<Flow>) {
                 collect_expr_flows(a, out);
             }
         }
+        ExprKind::Array(elems) => {
+            for a in elems {
+                collect_expr_flows(a, out);
+            }
+        }
         ExprKind::Reduction {
             binder,
             domain,
@@ -335,6 +340,7 @@ fn expr_tainted(e: &Expr, taint: &HashSet<Ident>) -> bool {
                 expr_tainted(callee, taint) || args.iter().any(|a| expr_tainted(a, taint))
             }
         }
+        ExprKind::Array(elems) => elems.iter().any(|a| expr_tainted(a, taint)),
         ExprKind::Reduction { domain, body, .. } => {
             domain_tainted(domain, taint) || expr_tainted(body, taint)
         }
@@ -446,6 +452,11 @@ fn report_expr(e: &Expr, taint: &HashSet<Ident>, out: &mut Vec<Diagnostic>) {
         ExprKind::Call(callee, args) => {
             report_expr(callee, taint, out);
             for a in args {
+                report_expr(a, taint, out);
+            }
+        }
+        ExprKind::Array(elems) => {
+            for a in elems {
                 report_expr(a, taint, out);
             }
         }
