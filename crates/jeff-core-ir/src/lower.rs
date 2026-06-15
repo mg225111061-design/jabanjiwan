@@ -5,7 +5,10 @@
 //! single-binder reductions over ranges. Anything outside the subset yields an
 //! honest diagnostic (R24) — never a silent partial.
 
-use crate::{err, BinOp, CoreDomain, CoreExpr, CoreExprKind, CoreFn, CoreIr, CoreParam, CoreTy, RedKind};
+use crate::{
+    err, BinOp, CoreDomain, CoreExpr, CoreExprKind, CoreFn, CoreIr, CoreParam, CoreTy, MatchArm,
+    MatchPat, RedKind,
+};
 use jeff_span::{Diagnostic, Span};
 use jeff_syntax::ast;
 use num_bigint::BigInt;
@@ -175,6 +178,33 @@ fn lower_expr(e: &ast::Expr) -> Result<CoreExpr, Vec<Diagnostic>> {
             domain,
             body,
         } => lower_reduction(span, *kind, binder, domain, body)?,
+        ast::ExprKind::Match { scrut, arms } => {
+            // Stage 23: integer match (control flow). Patterns in the executable subset are
+            // an integer literal, a binding variable (catch-all), or `_`.
+            let scrutinee = Box::new(lower_expr(scrut)?);
+            let mut core_arms = Vec::with_capacity(arms.len());
+            for arm in arms {
+                let pat = match &arm.pat.kind {
+                    ast::PatternKind::Lit(ast::Lit::Int(s, _)) => {
+                        let v: BigInt = s.parse().map_err(|_| {
+                            vec![err(arm.pat.span, format!("invalid integer pattern {s:?}"))]
+                        })?;
+                        MatchPat::Lit(v)
+                    }
+                    ast::PatternKind::Wild => MatchPat::Wild,
+                    ast::PatternKind::Var(name) => MatchPat::Bind(name.clone()),
+                    other => {
+                        return Err(vec![err(
+                            arm.pat.span,
+                            format!("match pattern {other:?} is not in the integer subset (Stage 23)"),
+                        )])
+                    }
+                };
+                let body = lower_block(&arm.body)?;
+                core_arms.push(MatchArm { pat, body });
+            }
+            CoreExprKind::Match { scrutinee, arms: core_arms }
+        }
         other => {
             return Err(vec![err(
                 span,

@@ -150,6 +150,7 @@ pub fn is_polynomial_in(e: &CoreExpr, binder: &str) -> bool {
         },
         CoreExprKind::Call(..) => false, // a binomial/factorial call is not a polynomial
         CoreExprKind::Reduction { .. } => false,
+        CoreExprKind::Match { .. } => false, // control flow is not a power-sum polynomial
     }
 }
 
@@ -175,6 +176,9 @@ fn is_geometric_in(e: &CoreExpr, binder: &str) -> bool {
             CoreExprKind::Bin(_, a, b) => mentions(a, binder) || mentions(b, binder),
             CoreExprKind::Call(_, args) => args.iter().any(|a| mentions(a, binder)),
             CoreExprKind::Reduction { body, .. } => mentions(body, binder),
+            CoreExprKind::Match { scrutinee, arms } => {
+                mentions(scrutinee, binder) || arms.iter().any(|a| mentions(&a.body, binder))
+            }
         }
     }
     fn check(e: &CoreExpr, binder: &str) -> bool {

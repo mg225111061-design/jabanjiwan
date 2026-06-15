@@ -79,6 +79,30 @@ pub enum CoreExprKind {
         domain: CoreDomain,
         body: Box<CoreExpr>,
     },
+    /// Integer `match` (Stage 23 — control flow): evaluate `scrutinee`, take the first arm
+    /// whose pattern matches. Arms are tried in order; a `Bind`/`Wild` is a catch-all.
+    Match {
+        scrutinee: Box<CoreExpr>,
+        arms: Vec<MatchArm>,
+    },
+}
+
+/// One arm of an integer [`CoreExprKind::Match`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchArm {
+    pub pat: MatchPat,
+    pub body: CoreExpr,
+}
+
+/// An integer match pattern (Stage 23 subset).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MatchPat {
+    /// Matches exactly this integer.
+    Lit(BigInt),
+    /// Catch-all that binds the scrutinee value to a variable in the arm body.
+    Bind(Var),
+    /// Catch-all (`_`).
+    Wild,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,6 +153,8 @@ pub enum EvalError {
     RangeTooLarge,
     /// A call to an unknown/unsupported builtin.
     UnknownCall(String),
+    /// No match arm matched the scrutinee (non-exhaustive at runtime).
+    NonExhaustiveMatch,
 }
 
 /// Binomial coefficient `C(n,k)` over the integers; `0` when `k<0` or `k>n` (for
@@ -201,6 +227,22 @@ pub fn eval(e: &CoreExpr, env: &BTreeMap<Var, BigInt>) -> Result<BigInt, EvalErr
             domain,
             body,
         } => eval_reduction(*kind, binder, domain, body, env),
+        CoreExprKind::Match { scrutinee, arms } => {
+            let s = eval(scrutinee, env)?;
+            for arm in arms {
+                match &arm.pat {
+                    MatchPat::Lit(v) if *v == s => return eval(&arm.body, env),
+                    MatchPat::Lit(_) => {}
+                    MatchPat::Wild => return eval(&arm.body, env),
+                    MatchPat::Bind(name) => {
+                        let mut child = env.clone();
+                        child.insert(name.clone(), s);
+                        return eval(&arm.body, &child);
+                    }
+                }
+            }
+            Err(EvalError::NonExhaustiveMatch)
+        }
     }
 }
 

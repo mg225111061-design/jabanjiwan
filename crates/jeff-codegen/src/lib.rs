@@ -137,6 +137,10 @@ fn emit_expr(
             domain,
             body,
         } => emit_reduction(e, *kind, binder, domain, body, env),
+        CoreExprKind::Match { .. } => Err(CodegenError::Unsupported(
+            "integer `match` is eval-executable (jeff-jlir) but not yet LLVM-lowered (Stage 23 subset)"
+                .to_string(),
+        )),
     }
 }
 

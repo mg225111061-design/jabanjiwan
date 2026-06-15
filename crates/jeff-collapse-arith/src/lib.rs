@@ -194,6 +194,7 @@ pub fn to_unipoly(e: &CoreExpr, binder: &str) -> Option<UniPoly> {
         }
         CoreExprKind::Call(..) => None, // binomial/factorial: not a polynomial in the binder
         CoreExprKind::Reduction { .. } => None,
+        CoreExprKind::Match { .. } => None, // control flow: not a polynomial in the binder
     }
 }
 
