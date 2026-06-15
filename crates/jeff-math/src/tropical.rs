@@ -129,10 +129,7 @@ mod tests {
         let b = vec![1, 0, 2, 3];
         let c = min_plus_matmul(&a, &b, w);
         assert_eq!(c[0], 2); // min(1+1, 5+2)
-        assert_eq!(c[1], min(1 + 0, 5 + 3)); // min(1, 8) = 1
-    }
-    fn min(a: i64, b: i64) -> i64 {
-        a.min(b)
+        assert_eq!(c[1], 1); // min(1+0, 5+3) = min(1, 8)
     }
 
     #[test]
