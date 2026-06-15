@@ -52,6 +52,7 @@ pub mod sparsefft2d;
 pub mod streaming;
 pub mod tensornet;
 pub mod tetration;
+pub mod tropical;
 
 pub use gf2::{Gf2Matrix, Gf2Vec};
 pub use hyper::{HyperTerm, LinForm};

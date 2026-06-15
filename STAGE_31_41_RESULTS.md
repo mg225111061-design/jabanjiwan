@@ -100,3 +100,19 @@ included) — but `a↑↑h mod m` is computable via the **totient ladder** `a^b
 
 5 tests: `tetration_mod_p_exact`, `totient_ladder_coprime_guarded`, `lazy_modulus_demand_driven`,
 `ackermann_small_oracle_diff`, `lucas_binomial_mod_p_correct`. Workspace green, clippy clean, verifier 49/0.
+
+---
+
+## §C.34 — tropical (min,+) DP fold family — **BUILT** (new domain: combinatorial optimization)
+
+`jeff_math::tropical`. Min-plus semiring (`⊕=min, ⊗=+`). Structured win mirrors Stage 26: a layered
+DAG whose layer matrix `M` **repeats** N times → length-N shortest paths `= M^{⊗N}` via min-plus
+**fast exponentiation** O(w³ log N) vs naive O(N·w²); ratio `~ N/(w log N)` diverges for fixed w.
+
+- `min_plus_matmul`/`min_plus_matpow`/`repeated_layer_naive`/`layered_dag_naive`/`viterbi_path`.
+- Certificate: **integer-exact** (matpow == naive). No "O(1) collapse" claimed (tropical varieties
+  can be exponential) — gain only for repeated/low-rank structure; **distinct layers ⇒ zero gain**
+  (`no_structure_zero_gain`, honest). Viterbi path decode exact.
+- Extends coverage into the **combinatorial-optimization** domain (a different axis from
+  numeric/signal). 5 tests: `minplus_semiring_correct`, `layered_dag_collapse_measured`,
+  `viterbi_path_exact`, `no_structure_zero_gain`, `tropical_cert`. Workspace green, clippy clean.
