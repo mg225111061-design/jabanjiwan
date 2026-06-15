@@ -10,6 +10,7 @@
 //! (MIT/Apache), never GMP/`rug` (LGPL).
 
 pub mod anytime;
+pub mod cfinite;
 pub mod complex;
 pub mod dilithium;
 pub mod fmat;
@@ -18,6 +19,7 @@ pub mod frame;
 pub mod geometry;
 pub mod gf2;
 pub mod holographic;
+pub mod holsum;
 pub mod hyper;
 pub mod intrel;
 pub mod keccak;

@@ -267,4 +267,53 @@ mod tests {
         let t = zeilberger(&term, &Bounds::default()).expect("telescoper found");
         assert!(telescoper_holds(&term, &t.l, &t.r));
     }
+
+    /// Stage 26.3 end-to-end: the Zeilberger-found telescoper's certificate is verified by the
+    /// **actual** `jeff_verify` gate, its recurrence reproduces the naive `Σ_k` (holsum), and a
+    /// tampered operator is rejected by the gate (P0/DR1).
+    #[test]
+    fn telescoper_certificate_verified_and_recurrence_matches_naive() {
+        use jeff_cert::{Boundary, Certificate, Evidence, IrRef, Obligation};
+        use jeff_math::holsum::{naive_sum, telescoper_table};
+        use jeff_span::Span;
+
+        let term = binom_nk(); // Σ_k C(n,k) = 2^n
+        let t = zeilberger(&term, &Bounds::default()).expect("telescoper found");
+
+        let mk = |l: Vec<RatFunc>| Certificate {
+            collapser_id: "arith/holonomic".into(),
+            source: IrRef::new(1, Span::dummy()),
+            collapsed: IrRef::new(2, Span::dummy()),
+            obligation: Obligation::new("Σ_k C(n,k) telescoper"),
+            evidence: Evidence::Telescoper { term: term.clone(), l, r: t.r.clone() },
+            boundaries: vec![Boundary::new("boundary vanishes")],
+            fallback: IrRef::new(1, Span::dummy()),
+        };
+
+        // (1) certificate verified by the real gate.
+        assert!(jeff_verify::verify(mk(t.l.clone())).is_some(), "real telescoper must verify");
+
+        // (2) the certified recurrence reproduces the direct sum, bit-exact over ℚ.
+        let tab = telescoper_table(&term, &t.l, 25).expect("table");
+        for (n, s) in tab.iter().enumerate() {
+            assert_eq!(*s, naive_sum(&term, n as i64).unwrap(), "S({n}) recurrence vs naive");
+        }
+
+        // (3) tampered operator (perturb a_0) is rejected by the gate.
+        let mut bad = t.l.clone();
+        bad[0] = bad[0].add(&RatFunc::from_i64(1));
+        assert!(jeff_verify::verify(mk(bad)).is_none(), "tampered telescoper must be rejected");
+    }
+
+    /// Stage 26.3 honest defer: when no telescoper exists within the search budget, the engine
+    /// returns `None` (HONEST_DEFER) rather than fabricating a recurrence (DR5/R32). Here the
+    /// budget is deliberately too small to represent the certificate `R(n,k)`.
+    #[test]
+    fn nonholonomic_input_defers() {
+        let term = binom_nk();
+        let tiny = Bounds { max_order: 2, max_rnum_deg_k: 0, max_coeff_deg_n: 0 };
+        assert!(zeilberger(&term, &tiny).is_none(), "no certificate in budget ⇒ defer, not fabricate");
+        // sanity: an adequate budget *does* find a (verified) telescoper.
+        assert!(zeilberger(&term, &Bounds::default()).is_some());
+    }
 }
