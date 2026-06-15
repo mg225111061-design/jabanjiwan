@@ -283,6 +283,38 @@ mod tests {
     }
 
     #[test]
+    fn composed_fold_is_certified_and_fusion_preserves_result() {
+        // Stage 16.3 COMPOSE: fold the structure BETWEEN kernels. a = Fibonacci (C-finite
+        // order 2), b = 2^n (order 1); c = a+b is C-finite by closure under +.
+        let n = 22;
+        let mut fib = vec![BigInt::from(0), BigInt::from(1)];
+        while fib.len() < n {
+            let k = fib.len();
+            fib.push(&fib[k - 1] + &fib[k - 2]);
+        }
+        let pow2: Vec<BigInt> = (0..n).map(|i| BigInt::from(1i64 << i)).collect();
+        let c: Vec<BigInt> = fib.iter().zip(&pow2).map(|(x, y)| x + y).collect(); // staged
+
+        // The composed sequence has its own certified fold (composed_fold_is_certified).
+        let (order, operator, cert_ok) = match discover_sequence(&c, 4, 0) {
+            Discovery::Found { order, operator, cert, .. } => {
+                let reverify = jeff_verify::verify(cert.certificate().clone()).is_some();
+                (order, operator, reverify)
+            }
+            _ => panic!("a+b must be C-finite by closure"),
+        };
+        assert!(cert_ok, "composed fold carries a re-verifiable certificate");
+
+        // fusion_preserves_result: generating c from its SINGLE recurrence (fused) equals the
+        // staged a+b, on every term.
+        let op_rat: Vec<BigRational> = operator.iter().map(|x| BigRational::from(x.clone())).collect();
+        let gen = jeff_math::recurrence::generate_cfinite(&c[..order], &op_rat, n)
+            .expect("C-finite generation");
+        let c_rat: Vec<BigRational> = c.iter().map(|x| BigRational::from(x.clone())).collect();
+        assert_eq!(gen, c_rat, "fused single recurrence == staged composition");
+    }
+
+    #[test]
     fn cached_rule_carries_certificate() {
         // A cached recognition carries a re-verifiable certificate (fold or absence).
         let mut cache = FoldCache::new();

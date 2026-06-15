@@ -85,6 +85,36 @@ pub fn excludes_recurrence(samples: &[BigInt], r: usize, d: usize) -> bool {
     linsolve::nullspace(&m).is_empty()
 }
 
+/// Generate `count` terms of a C-finite (degree-0) sequence from `order` initial terms and a
+/// degree-0 `operator` `[c_0 … c_order]` with `c_order ≠ 0`:
+/// `a_{n+order} = −(Σ_{i<order} c_i·a_{n+i}) / c_order`. Used to show that a *fused* single
+/// recurrence reproduces a *staged* composition (Stage 16.3). Returns rationals (exact).
+pub fn generate_cfinite(
+    initial: &[BigInt],
+    operator: &[BigRational],
+    count: usize,
+) -> Option<Vec<BigRational>> {
+    let order = operator.len().checked_sub(1)?;
+    if initial.len() < order || order == 0 {
+        return None;
+    }
+    let lead = operator.last()?;
+    if lead.is_zero() {
+        return None;
+    }
+    let mut out: Vec<BigRational> = initial.iter().take(order).map(rat).collect();
+    while out.len() < count {
+        let n = out.len() - order;
+        let mut acc = BigRational::zero();
+        for (i, c) in operator.iter().take(order).enumerate() {
+            acc += c * &out[n + i];
+        }
+        out.push(-acc / lead);
+    }
+    out.truncate(count);
+    Some(out)
+}
+
 /// Verify a claimed annihilating operator exactly: every equation row evaluates to 0.
 pub fn verify_annihilator(samples: &[BigInt], r: usize, d: usize, op: &[BigRational]) -> bool {
     let m = annihilator_matrix(samples, r, d);
