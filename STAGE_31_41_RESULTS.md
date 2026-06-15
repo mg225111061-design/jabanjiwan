@@ -80,3 +80,23 @@ Tests: `nested_fold_globally_certified`, `transition2_offbyone_caught_by_ordinal
 Honest scope: measure auto-synthesis is general-undecidable (termination) — automatic only for
 fixed-depth lexicographic; rest is annotation/HONEST_DEFER. Verification-power (compile-time, runtime
 0). Veblen/Γ₀/OCF are domain-out, not built. 10 tests. Workspace green, clippy clean, verifier 49/0.
+
+---
+
+## §C.33 — lazy modular giant numbers (tetration mod p) — **BUILT**
+
+`jeff_math::tetration`. **Value, not speed**: `2↑↑1000` cannot be materialized by any bignum (GMP
+included) — but `a↑↑h mod m` is computable via the **totient ladder** `a^b ≡ a^{(b mod φ(m))+φ(m)}
+(mod m)` for `b ≥ log₂ m`; the φ-chain reaches 1 in `O(log² m)` steps so the tower collapses.
+
+- 33.1/33.3: `tetration_mod` — exact small towers taken directly (`2↑↑3=16`, `2↑↑4=65536`), huge
+  towers via the **guarded** lift. Safety guard `lift_guard_ok` (`b ≥ log₂ m`) is load-bearing —
+  only lift when the exact tower overflows the 2^64 cap (⇒ exponent ≥ 64 > log₂ m). `2↑↑1000 mod p`
+  completes (GMP cannot). Certificate: **exact modular** (strongest); powerless for the full-value
+  question (residues only) — stated.
+- 33.2: `LazyBignum` demand-driven residues (only demanded moduli materialized + cached).
+- 33.4: `ackermann_small` (m≤3, hard guard), `lucas_binomial_mod_p` (Lucas, no bignum) — oracle
+  cross-checks. coprime guard demonstrated (gcd(2,12)≠1 still valid because tower ≥ log₂ m).
+
+5 tests: `tetration_mod_p_exact`, `totient_ladder_coprime_guarded`, `lazy_modulus_demand_driven`,
+`ackermann_small_oracle_diff`, `lucas_binomial_mod_p_correct`. Workspace green, clippy clean, verifier 49/0.
