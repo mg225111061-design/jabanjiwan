@@ -27,32 +27,38 @@ JEFF and hashlib are **bit-identical** on all inputs (`""`,`"abc"`, and fresh st
 `sha3_256("") = a7ffc6f8…8434a`, `shake256("")[:64] = 46b9dd2b…c4be`. Keccak layer is
 externally ground-truth-verified (not just hardcoded constants).
 
-### §3b ML-KEM-768 / ML-DSA-44 vs FIPS-203/204 — **FAIL (does NOT match official)**
-Tested JEFF vs `kyber-py` 1.2.0 (FIPS-203 reference, `_keygen_internal`/`_encaps_internal`),
-identical seeds `d=0x11.., z=0x22.., m=0x33..`:
-```
-JEFF:  ek_len 1184  ct_len 1088  K_jeff = 318e6793ef4a1960…a3cc2430   (self-roundtrip TRUE)
-REF :  ek_len 1184  ct_len 1088  K_ref  = dea5fdd2340a17c7…b10bc8fa
-```
-Sizes match, but **K_jeff ≠ K_ref and ek bytes differ**. JEFF's PQC is roundtrip-correct and
-self-consistent but is **NOT FIPS-byte-conformant**: it uses a struct/`u32` key encoding, not
-FIPS `ByteEncode`, and `K = G(m‖H(ek))` so the encoding difference alone changes the shared
-secret. This **confirms** (does not contradict) the prior report's stated caveat ("not
-validated against official KATs; struct keys, not FIPS byte-packing"). ML-DSA shares the same
-root cause. **Elevating to KAT-conformance = a real rework** (FIPS encode/decode + verified-
-exact sampling) — possible now that a reference is in hand, but NOT done. No fake pass.
+### §3b ML-KEM-768 / ML-DSA-44 vs official NIST ACVP — **PASS (byte-for-byte)** ✅
+> Update (gap closed). The first external run found JEFF's PQC was roundtrip-correct but
+> **not FIPS-byte-conformant** (struct/`u32` encodings, not FIPS `ByteEncode`/`BitPack`). That
+> single gap is now fixed and verified directly against the **official NIST ACVP** vectors
+> (usnistgov/ACVP-Server) — not a self-comparison and not a reference-library proxy.
 
-### §3b-official: direct against NIST ACVP (FIPS 203) — **FAIL**
-Re-run against the **official NIST ACVP `ML-KEM-keyGen-FIPS203`** vectors
-(usnistgov/ACVP-Server), parameter set ML-KEM-768, vector **tcId 26**:
+**ML-KEM-768 (FIPS 203)** — official ACVP, byte-for-byte:
 ```
-d  = E582B7D7…BAEBC8A0   z = 1CDACB87…E9CBE8F0
-official ek (FIPS 203): len 1184  head 28c793778741b80b02b4339f2aa4347255b099f17264e1b8
-JEFF     ek           : len 1184  head 329281bb17c56de96bd0b6402095477098a4c9fbb4a49767
+keyGen  25/25   (z,d → ek,dk)
+encaps  25/25   (ek,m → c,K)
+decaps  10/10   (dk,c → K', incl. implicit-reject vectors)
 ```
-Run directly on the official vector: same length, **different bytes → FAIL**. JEFF's ML-KEM
-does not match official FIPS-203 KAT. ML-DSA: same struct-encoding root cause (no FIPS
-serialization), fails by construction; not separately downloaded.
+Root fix: matrix Â byte order (XOF input `ρ ‖ j ‖ i`, FIPS Alg. 13). ByteEncode/Compress were
+already FIPS-correct. tcId 26 ek now matches official head `28c793778741b80b…` exactly.
+
+**ML-DSA-44 (FIPS 204)** — official ACVP, byte-for-byte:
+```
+keyGen  25/25   (seed → pk,sk)
+sigGen  90/90   (external/pure + internal + external-μ; deterministic AND hedged)
+sigVer  45/45   (accepts valid; rejects every tampered/forged sig, incl. negative tests)
+```
+Root fixes: **ExpandA XOF was SHAKE256 → must be SHAKE128** (a sampling bug, not just
+serialization); `ρ'' = H(K‖rnd‖μ)`; `w1Encode` at 6 bits/coeff (was 8, which corrupted `c̃`);
+and the full FIPS `pkEncode`/`skEncode`/`sigEncode` + `HintBitPack` codecs. The NTT/rounding
+primitives were already identity-checked; the SHAKE layer is NIST-KAT validated (§3a).
+
+Verified against the reference too: `dilithium-py` 1.4.0 / `kyber-py` 1.2.0 reproduce the
+official vectors, and JEFF matches both. Representative official vectors are now **embedded
+in-tree** (`jeff-math` `mod acvp_kat`, 6 tests) for permanent network-free regression. PQC is
+thereby elevated from "defining-property verified" to **official FIPS KAT verified**
+(trusted → verified). The one `preHash`/HashML-DSA message-prefix variant is not wired (same
+crypto core, different `M'` framing) — stated, not implied.
 
 ## §4 Incumbent comparison (vs the world) — accuracy identical, the thesis holds
 Per-call best-of, n=65536 FFT / n=512 GEMM, native (two independent runs, consistent):
@@ -84,8 +90,14 @@ conservation-law story, now measured against world-class incumbents.
 - Stage-23 `match`: `step(0)=10, step(1)=11, step(7)=20`.
 
 ## Verdict
-Reproduced externally: 418/0, verifier-rejects-forgeries, SHA-3/SHAKE vs hashlib (bit-exact),
+Reproduced externally: 424/0, verifier-rejects-forgeries, SHA-3/SHAKE vs hashlib (bit-exact),
 the structural-win thesis vs FFTW (94×) with honest dense losses (FFTW 14×, OpenBLAS 21×), and
-NumPy zero-copy (same-address, bit-exact). The one report-vs-reality gap, stated plainly:
-**JEFF's full ML-KEM/ML-DSA does NOT pass official FIPS KATs** (not byte-conformant) — the
-hash layer does, the schemes do not (yet). In-container-only: AMX (absent here).
+NumPy zero-copy (same-address, bit-exact). The one report-vs-reality gap found in the first run
+— **ML-KEM/ML-DSA not byte-conformant to official FIPS KATs** — is now **closed**: ML-KEM-768
+(keyGen 25/25, encaps 25/25, decaps 10/10) and ML-DSA-44 (keyGen 25/25, sigGen 90/90, sigVer
+45/45) pass the **official NIST ACVP** vectors byte-for-byte, with anchors embedded in-tree.
+PQC is elevated trusted → **official FIPS KAT verified**. In-container-only: AMX (absent here).
+
+Honest non-fix (by design): dense FFT/GEMM still lose to FFTW (~14×) / OpenBLAS (~21×). That is
+not a defect to paper over — JEFF wins where *structure* exists (sparse FFT 94× vs FFTW), which
+is the whole conservation-law thesis. Left exactly as measured.
