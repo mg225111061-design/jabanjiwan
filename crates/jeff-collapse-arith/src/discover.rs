@@ -156,6 +156,65 @@ pub fn discover_sequence(samples: &[BigInt], max_order: usize, max_degree: usize
     Discovery::Absent { tried }
 }
 
+/// A cached, verified recognition outcome (Stage 15.4 / 16.2): a discovered fold or a
+/// labeled absence, both carrying a re-checkable certificate.
+pub struct CachedFold {
+    pub found: bool,
+    pub cert: VerifiedCertificate,
+}
+
+/// The self-improving discover→verify→cache→recognize loop (Stage 15.4). The first
+/// encounter pays the full portfolio cost; subsequent encounters of the same input are
+/// recognized by an O(1) content-addressed lookup that returns the *same verified
+/// certificate* — JEFF's recognized family grows over time. (Content-addressed by meaning
+/// is also Stage 16.2 universal memoization.)
+#[derive(Default)]
+pub struct FoldCache {
+    map: std::collections::HashMap<String, CachedFold>,
+    pub misses: u64,
+    pub hits: u64,
+}
+
+impl FoldCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn key(samples: &[BigInt], r: usize, d: usize) -> String {
+        let mut s = format!("{r}:{d}:");
+        for x in samples {
+            s.push_str(&x.to_string());
+            s.push(',');
+        }
+        s
+    }
+
+    /// Recognize `samples` via the cache; on a miss, run the portfolio and cache the
+    /// verified certificate. `None` only if the portfolio produced neither a fold nor any
+    /// absence certificate (e.g. an underdetermined ceiling) — nothing verifiable to cache.
+    pub fn recognize(&mut self, samples: &[BigInt], r: usize, d: usize) -> Option<&CachedFold> {
+        let k = Self::key(samples, r, d);
+        if !self.map.contains_key(&k) {
+            self.misses += 1;
+            let entry = match discover_sequence(samples, r, d) {
+                Discovery::Found { cert, .. } => Some(CachedFold { found: true, cert }),
+                Discovery::Absent { mut tried } => {
+                    tried.pop().map(|item| CachedFold { found: false, cert: item.cert })
+                }
+            };
+            match entry {
+                Some(e) => {
+                    self.map.insert(k.clone(), e);
+                }
+                None => return None,
+            }
+        } else {
+            self.hits += 1;
+        }
+        self.map.get(&k)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +280,52 @@ mod tests {
             }
             _ => panic!("high-entropy sequence must defer with absence proofs"),
         }
+    }
+
+    #[test]
+    fn cached_rule_carries_certificate() {
+        // A cached recognition carries a re-verifiable certificate (fold or absence).
+        let mut cache = FoldCache::new();
+        let fib = seq(&[0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233]);
+        let entry = cache.recognize(&fib, 5, 1).expect("Fibonacci recognized");
+        assert!(entry.found);
+        let c = entry.cert.certificate().clone();
+        assert!(jeff_verify::verify(c).is_some(), "cached cert must re-verify");
+    }
+
+    #[test]
+    fn cached_fold_recognized_cheaply() {
+        // Second encounter ≥100× faster than rediscovery (O(1) lookup vs exact rref).
+        let mut x = 0x0BADC0DE_F00D_1234u64;
+        let s: Vec<BigInt> = (0..40)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                BigInt::from((x % 1009) as i64)
+            })
+            .collect();
+        // cost of rediscovery (fresh portfolio each time), averaged.
+        let reps = 5;
+        let t0 = std::time::Instant::now();
+        for _ in 0..reps {
+            let _ = discover_sequence(&s, 2, 1);
+        }
+        let rediscover = t0.elapsed().as_nanos() as f64 / reps as f64;
+
+        // warm the cache, then time cache hits.
+        let mut cache = FoldCache::new();
+        let _ = cache.recognize(&s, 2, 1); // miss (populate)
+        let hit_reps = 1000;
+        let t1 = std::time::Instant::now();
+        for _ in 0..hit_reps {
+            let _ = cache.recognize(&s, 2, 1);
+        }
+        let hit = t1.elapsed().as_nanos() as f64 / hit_reps as f64;
+        assert_eq!(cache.hits, hit_reps, "all subsequent calls are hits");
+        assert!(
+            hit * 100.0 < rediscover,
+            "cache hit ({hit:.0}ns) must be ≥100× faster than rediscovery ({rediscover:.0}ns)"
+        );
     }
 }
