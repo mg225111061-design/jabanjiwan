@@ -219,3 +219,28 @@ re-verifies it holds (no new code needed; recorded honestly as already-done, not
 - No regression: mlkem 8/8, mldsa 5/5 (roundtrip + reject), 48 reject/tamper/false tests across the
   workspace. Certificate: **integer-exact** (byte-for-byte vs official KAT). PQC status:
   **official-FIPS-KAT-verified** (the trusted→verified jump, retained). Verifier 49/0.
+
+---
+
+## §C.40 — Koopman / dynamical-systems fold axis — **BUILT** (first dynamic axis)
+
+`jeff_math::koopman`. The first *dynamic* axis (long-term flow). A nonlinear map's observable
+expands as `g(x_n)=Σ c_j λ_j^n` (Koopman eigenfunctions) = the Stage-35 Hankel-nullspace problem.
+
+- **40.1**: `koopman_dmd_hankel` reuses `expfit::hankel_recurrence` (2ⁿ+3ⁿ → order 2; Fibonacci →
+  order 2). `koopman_longterm` = Stage-26 fast power `O(log N)` vs naive `O(N)` (fastpow==naive at
+  N=10..1000; ratio diverges N/log N). Certificate: **exact** / **interval** (shared Hankel
+  condition weakness). Same honesty label as Stage 26/35 (asymptotic, Ω(N)-safe, output = k modes).
+- **40.2 chaos absence** (dynamical analog of Stage-37 Galois absence): logistic r=4 → Lyapunov
+  ≈ ln2 > 0 → **ChaosAbsence** (no long-term closed form — exponential sensitivity ⇒ none exists);
+  r=2.5 → λ_L < 0 → **Fold**. Birkhoff ergodicity: time-average of x over the r=4 chaotic orbit
+  ≈ 0.5 = space average (invariant density mean). Certificate: **absence** (λ_L>0) /
+  **fold** (λ_L<0) / **ergodic** (time=space).
+- **40.3**: `koopman_reduces_to_krylov_when_linear` — when `f` is linear the Koopman observable is
+  C-finite of order = state dim, so Koopman = the Stage-31.2 Krylov / Stage-26 C-finite fold (the
+  linear/nonlinear pair of "long-term power via spectrum").
+
+9 tests (`koopman_dmd_via_hankel`, `reuses_exponential_fit`, `koopman_longterm_via_fastpow`,
+`koopman_ratio_diverges`, `lyapunov_positive_defers_chaos`, `lyapunov_negative_folds`,
+`ergodic_time_equals_space`, `chaos_absence_certified`, `koopman_reduces_to_krylov_when_linear`).
+Workspace green, clippy clean, verifier 49/0.

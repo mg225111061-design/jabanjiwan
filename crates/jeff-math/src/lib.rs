@@ -30,6 +30,7 @@ pub mod hbfc;
 pub mod hyper;
 pub mod intrel;
 pub mod keccak;
+pub mod koopman;
 pub mod krylov;
 pub mod kyber;
 pub mod lattice;
