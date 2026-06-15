@@ -23,6 +23,7 @@ pub mod kyber;
 pub mod lattice;
 pub mod linsolve;
 pub mod matrix;
+pub mod mldsa;
 pub mod mlkem;
 pub mod modular;
 pub mod moments;
