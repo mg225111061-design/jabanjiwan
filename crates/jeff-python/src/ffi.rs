@@ -230,3 +230,97 @@ mod tests {
         assert_eq!(sd.provenance(), Provenance::Trusted);
     }
 }
+
+#[cfg(test)]
+mod numpy_tests {
+    use super::*;
+    #[test]
+    fn drives_numpy_if_present() {
+        match run("import numpy as np") {
+            Ok(()) => {
+                let v = eval_i64("int(np.arange(100).sum())").unwrap();
+                eprintln!("[numpy] JEFF drove numpy: arange(100).sum() = {}", v.get());
+                assert_eq!(*v.get(), 4950);
+                let f = eval_f64("float(np.linalg.norm(np.array([3.0,4.0])))").unwrap();
+                eprintln!("[numpy] np.linalg.norm([3,4]) = {}", f.get());
+                assert!((f.get() - 5.0).abs() < 1e-12);
+            }
+            Err(e) => eprintln!("[numpy] NOT importable in embedded interp: {}", e.0),
+        }
+    }
+}
+
+/// Stage 13 layer 3 (zero-copy array interchange) — minimal read-side via the CPython buffer
+/// protocol (PEP 3118). Reads a contiguous float64 buffer from a Python object WITHOUT
+/// copying (the slice points into Python's memory), for a bit-exact cross-check.
+#[cfg(feature = "embed")]
+pub mod bufproto {
+    use super::*;
+    // Fields after `buf`/`len` are unread here but MUST be present for the correct CPython
+    // `Py_buffer` C ABI layout (PyObject_GetBuffer writes the whole struct).
+    #[allow(dead_code)]
+    #[repr(C)]
+    struct PyBuffer {
+        buf: *mut c_void,
+        obj: Obj,
+        len: isize,
+        itemsize: isize,
+        readonly: c_int,
+        ndim: c_int,
+        format: *mut c_char,
+        shape: *mut isize,
+        strides: *mut isize,
+        suboffsets: *mut isize,
+        internal: *mut c_void,
+    }
+    extern "C" {
+        fn PyObject_GetBuffer(obj: Obj, view: *mut PyBuffer, flags: c_int) -> c_int;
+        fn PyBuffer_Release(view: *mut PyBuffer);
+    }
+    const PYBUF_SIMPLE: c_int = 0;
+
+    /// Sum a Python object's float64 buffer by reading it zero-copy (no Vec copy of the data),
+    /// plus report `(addr, nbytes)` so the caller can prove it is the same memory.
+    pub fn f64_buffer_zerocopy_sum(expr: &str) -> Result<(f64, usize, usize), PyError> {
+        with_gil(|| unsafe {
+            let obj = eval_obj(expr)?; // new ref to the array object
+            let mut view: PyBuffer = std::mem::zeroed();
+            let rc = PyObject_GetBuffer(obj, &mut view, PYBUF_SIMPLE);
+            if rc != 0 {
+                Py_DecRef(obj);
+                return Err(PyError(take_error()));
+            }
+            let n = (view.len as usize) / 8;
+            let ptr = view.buf as *const f64;
+            let slice = std::slice::from_raw_parts(ptr, n); // zero-copy view into Python memory
+            let sum: f64 = slice.iter().sum();
+            let addr = view.buf as usize;
+            let nbytes = view.len as usize;
+            PyBuffer_Release(&mut view);
+            Py_DecRef(obj);
+            Ok((sum, addr, nbytes))
+        })
+    }
+}
+
+#[cfg(all(test, feature = "embed"))]
+mod buffer_tests {
+    use super::*;
+    #[test]
+    fn numpy_zero_copy_buffer_roundtrip() {
+        if run("import numpy as np").is_err() {
+            eprintln!("[numpy] not present");
+            return;
+        }
+        // create a float64 array in Python; read its buffer zero-copy in Rust.
+        run("_arr = np.arange(1000, dtype=np.float64) * 2.5").unwrap();
+        let (sum, addr, nbytes) = bufproto::f64_buffer_zerocopy_sum("_arr").unwrap();
+        // numpy's own sum (independent) — bit-exact match.
+        let np_sum = eval_f64("float(_arr.sum())").unwrap();
+        let np_addr = eval_i64("_arr.__array_interface__['data'][0]").unwrap();
+        eprintln!("[numpy] zero-copy: rust_sum={sum} np_sum={} addr=0x{addr:x} np_addr=0x{:x} nbytes={nbytes}", np_sum.get(), *np_addr.get());
+        assert_eq!(sum, *np_sum.get(), "zero-copy buffer sum must match numpy bit-for-bit");
+        assert_eq!(addr, *np_addr.get() as usize, "same memory address ⇒ NOT copied (zero-copy)");
+        assert_eq!(nbytes, 8000);
+    }
+}

@@ -65,6 +65,10 @@ mod ffi;
 #[cfg(feature = "embed")]
 pub use ffi::{eval_f64, eval_i64, eval_string, exec, run, ensure_init};
 
+/// Stage 13 layer 3 — zero-copy array interchange (CPython buffer protocol, read-side).
+#[cfg(feature = "embed")]
+pub use ffi::bufproto::f64_buffer_zerocopy_sum;
+
 #[cfg(test)]
 mod tests {
     use super::*;
