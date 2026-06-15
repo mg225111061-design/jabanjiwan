@@ -1,0 +1,18 @@
+[package]
+name = "jeff-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Stage 13 — real CPython embedding (FFI to libpython). Drives Python/NumPy from JEFF; results crossing the FFI are labeled `trusted`, never `verified` (P1 verification-boundary discipline)."
+build = "build.rs"
+
+# CPython linkage is OFF by default so the default workspace build / CI stays clean and
+# determinism is preserved (no libpython needed). Turn it on with `--features embed`.
+[features]
+default = []
+embed = []
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -21,6 +21,7 @@ members = [
     "crates/jeff-stdlib",
     "crates/jeffc",
     "crates/jeff-test-oracles",
+    "crates/jeff-python",
 ]
 
 # JEFF / GACC compiler workspace.
