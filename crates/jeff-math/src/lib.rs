@@ -36,6 +36,7 @@ pub mod mlkem;
 pub mod modular;
 pub mod moments;
 pub mod nbody;
+pub mod ordinal;
 pub mod ot;
 pub mod planted;
 pub mod poly;

@@ -42,3 +42,41 @@ Ill-conditioned (Hilbert(8)) → CG stalls → residual large → certificate FA
 Note (test robustness): a Stage-30 timing-based test (`gate_prevents_wasted_lowrank_fit`) was
 flaky in debug (wall-clock assert) — replaced with a deterministic op-count proxy + the real
 "defer skips the fit" fact. Workspace 481/0, clippy `--all-targets -D warnings` clean.
+
+---
+
+## §C.32 — ‖JEFF‖ strength audit + ordinal termination (OIFC) — **BUILT (with keystone negative)**
+
+`jeff_math::ordinal`.
+
+**32.0 strength audit (keystone) — RESULT: ‖JEFF‖ = ω^ω, NOT ε₀.** The directive's premise ("Z3
+induction gate ⇒ arbitrary-predicate first-order induction ⇒ ε₀") is **false for this tree**
+(rule 4). Raw grep of `jeff-verify`: **no Z3, no Lean** ("Neither is wired"); the checker discharges
+**quantifier-free exact coefficient-zero polynomial identities** + exact replay. That is PRA-style;
+its proof-theoretic ordinal is **ω^ω**. → **All ε₀ claims downstream (OIFC 32.3, HBFC 38.2) are
+DOWNGRADED to ω^k.** This is the honest negative the keystone exists to catch (a win: the audit did
+its job). Two-tier epistemic status labeled: lower bound `≥ ω^k` *internal machine-checked* (ordinal
+CNF comparisons, exact); upper bound `≤ ω^ω` *paper metatheorem* — **not** provable inside JEFF
+(Gödel II). Tests: `jeff_strength_lower_bound_certified`, `jeff_strength_two_tier_labeled`.
+
+**32.1 ordinal_cnf**: recursive Cantor normal form below ε₀ (`Ord`), `ord_cmp`/`nat`/`omega`/
+`omega_pow`/`is_below_epsilon0`/`in_omega_k_fragment`. Tests `ordinal_cnf_compare_correct`,
+`ordinal_cnf_recursive_epsilon0` (ω < ω^ω < ω^(ω^ω) < ε₀).
+
+**32.2 measure_synth**: `lex_measure` → `ω^{k-1}i₁+…+iₖ` for fixed-depth nested loops; strong
+induction over μ realized by the transition checks. Tests `lexicographic_measure_synthesized`,
+`strong_induction_finite_decomposed`.
+
+**32.3 OIFC** (prefix-sum-of-prefix-sum): closed form `C(i)=Σ(i−j+1)A[j]` certified to equal the
+loop output for **all i** via ordinal induction `μ = ω·i + j` (`< ω²`, in the certifiable ω^k
+fragment — the ε₀→ω^k downgrade does **not** weaken it, since the real measure is only ω²). The
+transition-2 boundary lemma `cum(i+1,0)=cum(i,i)+A[0]` is exactly where the off-by-one is caught:
+the wrong closed form `(i−j)` is **rejected**. Certificate: **ordinal-termination + integer-exact**.
+Tests: `nested_fold_globally_certified`, `transition2_offbyone_caught_by_ordinal`.
+
+**32.4 FGH labels** (bonus): `fgh_level` reads complexity grade off the measure; explosive recursion
+(level > intended) flagged. Tests `fgh_level_inferred`, `explosive_recursion_warned`.
+
+Honest scope: measure auto-synthesis is general-undecidable (termination) — automatic only for
+fixed-depth lexicographic; rest is annotation/HONEST_DEFER. Verification-power (compile-time, runtime
+0). Veblen/Γ₀/OCF are domain-out, not built. 10 tests. Workspace green, clippy clean, verifier 49/0.
