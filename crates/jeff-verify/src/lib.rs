@@ -1017,6 +1017,16 @@ impl Checker for AbsenceChecker {
                     VerifyResult::Invalid
                 }
             }
+            Evidence::RankAbsence { matrix, rows, cols, rank, eps } => {
+                if matrix.len() != rows * cols || !tol_ok(*eps) {
+                    return VerifyResult::Invalid;
+                }
+                if jeff_math::fmat::excludes_rank(matrix, *rows, *cols, *rank, *eps) {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
             _ => VerifyResult::Invalid,
         }
     }
@@ -1082,7 +1092,9 @@ impl Checker for DefaultRegistry {
             | Evidence::NoiseSensitivity { .. }
             | Evidence::TensorContraction { .. }
             | Evidence::PlanarMatchings { .. } => KernelChecker.check(ev, ob, b),
-            Evidence::RecurrenceAbsence { .. } => AbsenceChecker.check(ev, ob, b),
+            Evidence::RecurrenceAbsence { .. } | Evidence::RankAbsence { .. } => {
+                AbsenceChecker.check(ev, ob, b)
+            }
         }
     }
 }
@@ -1145,6 +1157,7 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::TensorContraction { .. } => "tensor-naive-replay",
         Evidence::PlanarMatchings { .. } => "fkt-naive-pm-replay",
         Evidence::RecurrenceAbsence { .. } => "recurrence-exclusion-exact",
+        Evidence::RankAbsence { .. } => "rank-gap-absence",
     }
 }
 
@@ -2269,5 +2282,21 @@ mod tests {
         // a non-absence evidence is never mistaken for a labeled absence.
         assert!(Evidence::PolynomialIdentity { poly: Poly::zero() }.absence_label().is_none());
         assert!(!Evidence::PolynomialIdentity { poly: Poly::zero() }.is_absence());
+    }
+
+    #[test]
+    fn rank_absence_sound() {
+        // The identity is full rank: no rank-1 approximation within eps=0.5 (σ_2 = 1) ⇒ the
+        // low-rank absence certificate verifies, labeled (low-rank, …).
+        let id = vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let vc = verify(jeff_cert::rank_absence_certificate(id, 3, 3, 1, 0.5))
+            .expect("σ_2 = 1 > 0.5 ⇒ not rank-1");
+        assert_eq!(checker_name(&vc.certificate().evidence), "rank-gap-absence");
+        assert_eq!(vc.certificate().evidence.absence_label().unwrap().0, "low-rank");
+
+        // A genuine rank-1 matrix DOES admit a rank-1 fit (σ_2 = 0) ⇒ a rank-1 absence
+        // claim is false and is rejected (DR1).
+        let rank1 = vec![1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0];
+        assert!(verify(jeff_cert::rank_absence_certificate(rank1, 3, 3, 1, 1e-6)).is_none());
     }
 }

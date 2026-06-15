@@ -658,6 +658,17 @@ pub enum Evidence {
         order: usize,
         degree: usize,
     },
+    /// A proof (to spectral tolerance `eps`) that the row-major `rows×cols` matrix has NO
+    /// rank-≤`rank` approximation within error `eps` — i.e. σ_{rank+1} > eps (best rank-r
+    /// Frobenius error ≥ σ_{r+1}). An absence certificate relative to
+    /// (class = low-rank, Θ = (rank, eps, rows×cols)).
+    RankAbsence {
+        matrix: Vec<f64>,
+        rows: usize,
+        cols: usize,
+        rank: usize,
+        eps: f64,
+    },
 }
 
 impl Evidence {
@@ -746,13 +757,18 @@ impl Evidence {
             Evidence::PlanarMatchings { .. } => CertClass::Exact,
             // Stage 15.3: exact exclusion proof (full-rank Hermite-Padé over ℚ).
             Evidence::RecurrenceAbsence { .. } => CertClass::Exact,
+            // Stage 15.3: rank exclusion to spectral tolerance (σ_{r+1} > eps).
+            Evidence::RankAbsence { .. } => CertClass::EpsApproximate,
         }
     }
 
     /// True iff this evidence is a structure-ABSENCE certificate (Stage 15.3) — a claim
     /// about what is *not* present, which must always be labeled (class, Θ).
     pub fn is_absence(&self) -> bool {
-        matches!(self, Evidence::RecurrenceAbsence { .. })
+        matches!(
+            self,
+            Evidence::RecurrenceAbsence { .. } | Evidence::RankAbsence { .. }
+        )
     }
 
     /// The mandatory `(structure class, parameter label Θ)` of an absence certificate, or
@@ -763,6 +779,10 @@ impl Evidence {
             Evidence::RecurrenceAbsence { samples, order, degree } => Some((
                 "D-finite",
                 format!("order<={order},degree<={degree},N={}", samples.len()),
+            )),
+            Evidence::RankAbsence { rows, cols, rank, eps, .. } => Some((
+                "low-rank",
+                format!("rank<={rank},eps={eps},dims={rows}x{cols}"),
             )),
             _ => None,
         }
@@ -791,6 +811,32 @@ pub fn recurrence_absence_certificate(
              [class=D-finite, theta=(order<={order},degree<={degree},N={n})]"
         )),
         evidence: Evidence::RecurrenceAbsence { samples, order, degree },
+        boundaries: vec![],
+        fallback: src,
+    }
+}
+
+/// Build a labeled low-rank **structure-absence** certificate (Stage 15.3 #2): no rank-≤
+/// `rank` approximation of the `rows×cols` matrix exists within spectral tolerance `eps`.
+/// Assembles only; the checker confirms σ_{rank+1} > eps (a false claim fails the gate).
+pub fn rank_absence_certificate(
+    matrix: Vec<f64>,
+    rows: usize,
+    cols: usize,
+    rank: usize,
+    eps: f64,
+) -> Certificate {
+    let span = Span::dummy();
+    let src = IrRef::new(0, span);
+    Certificate {
+        collapser_id: "discover/rank-exclusion".into(),
+        source: src,
+        collapsed: src,
+        obligation: Obligation::new(format!(
+            "no rank-<={rank} approximation within spectral tol {eps} for the {rows}x{cols} matrix \
+             [class=low-rank, theta=(rank<={rank},eps={eps},dims={rows}x{cols})]"
+        )),
+        evidence: Evidence::RankAbsence { matrix, rows, cols, rank, eps },
         boundaries: vec![],
         fallback: src,
     }

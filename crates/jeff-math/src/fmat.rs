@@ -488,6 +488,47 @@ pub fn cg_solve(a: &Sparse, b: &[f64], max_iter: usize) -> (Vec<f64>, f64) {
     (x, residual)
 }
 
+/// Singular values of a row-major `rows×cols` matrix, **descending**, via the eigenvalues
+/// of the smaller Gram matrix (`AᵀA` or `AAᵀ`). Floats: exact up to the Jacobi tolerance.
+pub fn singular_values(data: &[f64], rows: usize, cols: usize) -> Vec<f64> {
+    assert_eq!(data.len(), rows * cols, "data length must be rows*cols");
+    let (g, dim) = if cols <= rows {
+        let mut g = vec![0.0; cols * cols];
+        for i in 0..cols {
+            for j in 0..cols {
+                let mut s = 0.0;
+                for k in 0..rows {
+                    s += data[k * cols + i] * data[k * cols + j];
+                }
+                g[i * cols + j] = s;
+            }
+        }
+        (g, cols)
+    } else {
+        let mut g = vec![0.0; rows * rows];
+        for i in 0..rows {
+            for j in 0..rows {
+                let mut s = 0.0;
+                for k in 0..cols {
+                    s += data[i * cols + k] * data[j * cols + k];
+                }
+                g[i * rows + j] = s;
+            }
+        }
+        (g, rows)
+    };
+    let (eig, _) = jacobi_eig(&FMat::from_data(dim, dim, g));
+    eig.iter().map(|&l| l.max(0.0).sqrt()).collect()
+}
+
+/// `true` iff the matrix has **no** rank-≤`r` approximation within spectral error `eps` —
+/// i.e. σ_{r+1} > eps (Stage 15.3 #2; best rank-r Frobenius error ≥ σ_{r+1}). A tolerance
+/// statement, labeled (low-rank, (r, eps)).
+pub fn excludes_rank(data: &[f64], rows: usize, cols: usize, r: usize, eps: f64) -> bool {
+    let sv = singular_values(data, rows, cols);
+    sv.get(r).map(|&s| s > eps).unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
