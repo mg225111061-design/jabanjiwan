@@ -14,6 +14,7 @@ pub mod bbp;
 pub mod cfinite;
 pub mod cohomology;
 pub mod complex;
+pub mod compose;
 pub mod dilithium;
 pub mod displacement;
 pub mod expfit;

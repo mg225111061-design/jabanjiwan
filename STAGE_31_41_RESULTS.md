@@ -244,3 +244,38 @@ expands as `g(x_n)=Σ c_j λ_j^n` (Koopman eigenfunctions) = the Stage-35 Hankel
 `koopman_ratio_diverges`, `lyapunov_positive_defers_chaos`, `lyapunov_negative_folds`,
 `ergodic_time_equals_space`, `chaos_absence_certified`, `koopman_reduces_to_krylov_when_linear`).
 Workspace green, clippy clean, verifier 49/0.
+
+---
+
+## §C.41 — Compositional Fold Algebra (ratios multiply → square) — **BUILT**
+
+`jeff_math::compose`. Composing folds whose structures are **independent** multiplies their ratios
+→ a doubly-nested sublinear fold is a **square** `(N/log N)²`; `d` axes → `d`-th power. The only
+honest source of "square speedup" (dense is Ω(N); Stage 27 stalled at 50%). An *algebra over the
+folds already built* (26–40), not a new algorithm.
+
+- **41.1** `compose_ratios(outer, inner, independent)` = `outer×inner` (independent) / `None`
+  (dependent — inner destroys outer's structure ⇒ no multiplication, honest). `composable`.
+- **41.2** square measured (op-count proxy, single = `N/log₂N`, composed = its square):
+
+  | N | single `N/log N` | **composed (square)** |
+  |---|---|---|
+  | 1e3 | 100 | 1.0e4 |
+  | 1e4 | ~714 | ~5.1e5 |
+  | 1e5 | ~5882 | ~3.5e7 |
+  | 1e6 | ~50000 | **~2.5e9** |
+
+  Nested prefix-of-prefix is **bit-exact** as composed folds vs the naive `O(N²)`
+  (`nested_prefix_squared_ratio`). The genuine *measured* `d=2` case is Stage 28.2 (2D sparse,
+  ratio diverges to 2589 at n=1024).
+- **41.3** product of built folds: C-finite (26) × sparse (28.2), displacement (31.1) × Koopman
+  (40) compose on independent axes (ratios multiply); incompatible (dependent) pairs reported as
+  no-composition. **41.4** d-dim `N^d/polylog` (d=2 square, d=3 cube), **only** under a tensor-rank
+  limit (curse of dimensionality — high rank ⇒ no composition, honest).
+- **41.5** unified wiring: composition justified by **Stage-32 OIFC** (`oifc_certify`), composable
+  operand chosen by **Stage-36 meta-selector** (`classify_sequence`), intermediate removed by
+  **Stage-38 HBFC** (`fused_pipeline`, ω^k-downgraded form).
+
+Certificate: the **weaker** of the composed folds (all-exact ⇒ exact; any probabilistic/interval ⇒
+that). **Square only with structure + composability**, asymptotic, Ω(N)-safe; **zero applicability
+to dense** (no folds to compose — Stage 27 unchanged). 18 tests. Workspace green, clippy clean.
