@@ -5,7 +5,7 @@
 //! the real certificate class) or an honest defer (with a barrier tag). This is what
 //! makes the kernels callable from `.jeff` source rather than library-only.
 
-use jeff_cert::{BarrierTag, CertClass, CollapseOutcome};
+use jeff_cert::{BarrierTag, CertClass, CollapseOutcome, VerifiedCertificate};
 use jeff_collapse_arith::{fourier, geometry, moments, planted, sparse, streaming};
 use jeff_syntax::ast::{Expr, ExprKind, FnDecl, Lit, StmtKind, UnOp};
 
@@ -15,6 +15,11 @@ pub struct KernelFn {
     pub name: String,
     pub kernel: String,
     pub status: KernelStatus,
+    /// The verified certificate, present iff the call collapsed. It is the proof object
+    /// AND it carries the recovered structure in its `evidence`, so a `.jeff` caller can
+    /// read out exactly the result the checker proved — the operational meaning of
+    /// "calls a kernel and gets the verified result" (P2). `None` on an honest defer.
+    pub cert: Option<VerifiedCertificate>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,13 +112,19 @@ fn const_u8_matrix(e: &Expr) -> Option<(Vec<u8>, usize)> {
 /// If `f`'s body is a recognized kernel call with constant data, run the collapser at
 /// compile time and return its status. `None` ⇒ not a kernel call (use the normal path).
 pub fn try_kernel_fn(f: &FnDecl) -> Option<KernelFn> {
-    let body = single_call(f)?;
-    let (name, args) = body;
+    let (name, args) = single_call(f)?;
     let (kernel, outcome) = dispatch_kernel(name, args)?;
+    // Retain the verified certificate before classifying: on a collapse it lets the caller
+    // recover the proved result (P2); on a defer there is nothing verified to keep.
+    let cert = match &outcome {
+        CollapseOutcome::Collapsed(c) => Some(c.certificate().clone()),
+        CollapseOutcome::Defer(_) => None,
+    };
     Some(KernelFn {
         name: f.name.clone(),
         kernel: kernel.to_string(),
         status: classify(outcome),
+        cert,
     })
 }
 
