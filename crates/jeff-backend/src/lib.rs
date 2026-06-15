@@ -11,6 +11,7 @@
 //! out-of-process step (license: R5) and is labeled as such where used — we never
 //! claim an incumbent comparison we did not run.
 
+pub mod autotune;
 pub mod cost;
 pub mod cpuprobe;
 pub mod measure;
