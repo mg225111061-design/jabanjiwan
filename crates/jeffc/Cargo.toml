@@ -27,5 +27,8 @@ serde_json = { workspace = true }
 name = "jeffc"
 path = "src/lib.rs"
 
+[dev-dependencies]
+jeff-math = { workspace = true }
+
 [lints]
 workspace = true

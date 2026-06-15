@@ -340,6 +340,7 @@ dependencies = [
  "jeff-collapse-arith",
  "jeff-core-ir",
  "jeff-jlir",
+ "jeff-math",
  "jeff-recognizer",
  "jeff-span",
  "jeff-syntax",
