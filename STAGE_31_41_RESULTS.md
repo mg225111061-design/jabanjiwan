@@ -279,3 +279,61 @@ folds already built* (26–40), not a new algorithm.
 Certificate: the **weaker** of the composed folds (all-exact ⇒ exact; any probabilistic/interval ⇒
 that). **Square only with structure + composability**, asymptotic, Ω(N)-safe; **zero applicability
 to dense** (no folds to compose — Stage 27 unchanged). 18 tests. Workspace green, clippy clean.
+
+---
+---
+
+# Unified closing §C — Stage 31 → 41 (overnight build)
+
+**554 workspace tests pass, clippy `--all-targets -D warnings` clean, verifier 49/0 at every
+entry/exit.** All 11 stages **BUILT** (Rust-reimplemented + tests green); none BLOCKED.
+
+| stage | what | status | certificate kind |
+|---|---|---|---|
+| 31 | #1 displacement + #7 Krylov (7-kernel absorption complete) | **BUILT** | exact-algebraic + integer-exact / ε-residual / absence |
+| 32 | ‖JEFF‖ strength audit + ordinal OIFC | **BUILT (keystone negative)** | ordinal-termination + integer-exact |
+| 33 | lazy modular giant numbers (tetration mod p) | **BUILT** | exact modular |
+| 34 | tropical (min,+) DP fold family | **BUILT** | integer-exact |
+| 35 | exponential_fit unification (Prony=ODA) | **BUILT** | exact / interval (condition) |
+| 36 | structure-discovery meta-selector | **BUILT** | probabilistic (probe) + exact (detected) |
+| 37 | Galois radical-absence + cohomology obstruction | **BUILT (niche)** | absence (exact unsat) |
+| 38 | TFF abstract interpretation + HBFC fusion | **BUILT (38.2 ω^k-downgraded)** | interval-bound (sound-upper) + ordinal (ω^k) |
+| 39 | PQC FIPS-203/204 ACVP byte-encoding | **BUILT (already complete; re-verified)** | integer-exact (byte-for-byte KAT) |
+| 40 | Koopman / dynamical-systems fold axis | **BUILT** | exact/interval/absence/ergodic |
+| 41 | Compositional Fold Algebra (square ratio) | **BUILT** | weaker-of-composed |
+
+### Key reported items
+- **32.0 ‖JEFF‖ = ω^ω, NOT ε₀** (keystone). The "Z3 induction gate ⇒ ε₀" premise is false for this
+  tree (no Z3/Lean; quantifier-free exact-identity checker, PRA-style). → **OIFC (32.3) and HBFC
+  (38.2) downgraded to ω^k.** The audit did its job (an honest negative = a win). OIFC's real
+  measure is only ω² so the downgrade doesn't weaken it; HBFC explicitly gated to ω^k.
+- **39 PQC**: ML-KEM-768 & ML-DSA-44 **pass official NIST ACVP KAT byte-for-byte** (closed in prior
+  sessions, re-verified green here — recorded honestly as already-done, not re-claimed).
+- **40 Koopman**: non-chaotic long-term ratio diverges (N/log N, reusing 26/35); chaos → Lyapunov>0
+  → absence cert; reduces to Krylov (31.2) when linear. Confirmed.
+- **41 composition**: the square `(N/log N)²` is op-count-measured + bit-exact nested correctness;
+  the genuine measured d=2 is Stage 28.2 (2D sparse, 2589× at n=1024). Works only with structure +
+  composability; **zero dense applicability**.
+
+### Honesty split (26–28), reaffirmed
+- **Dense = parity ceiling, never "beat"**: Stage 27 GEMM ~50% of OpenBLAS-1T, Stage 28.1 FFT
+  radix-2 ~72–85% of pocketfft. Not touched/improved this round (needs per-µarch asm).
+- **Structured = asymptotic infinite / huge / square ratio, Ω(N)-safe** (output = value / k
+  coefficients / k modes): Stage 26 C-finite/holonomic, 28.2 2D sparse, 31 displacement (bounded
+  ~n/r log n), 33 tetration (possibility not speed), 34 tropical (repeated-layer), 40 Koopman, 41
+  composition (square).
+
+### Premise corrections made (rule 4), not invented
+- Stage 32: no Z3/Lean induction gate exists (→ ω^ω, not ε₀).
+- Stage 39: no PQC gap remained (already fixed in prior sessions).
+- (Stage 29 prior round: no `prove_nonneg` stub existed — capability added.)
+
+### Niche / domain-edge labels (rule 7)
+- Stage 37 (Galois / cohomology): symbolic algebra / algebraic topology — outside JEFF's
+  numeric/signal/statistical/crypto core; built but not over-valued.
+- Stage 38 (HBFC ε₀): the genuine ε₀ regime is rare and beyond JEFF's audited ω^ω strength;
+  ω^k covers real deforestation.
+
+### 7-kernel absorption: **COMPLETE** (#1–#7 all Rust-reimplemented + tests green; §C.31).
+### Verification-power vs speed: 32/36/37/38 are verification-power (no asymptotic speed ratio);
+33 is possibility (not speed); 34/40/41 add structured speed ratios; 31/35 add bounded/exact folds.
