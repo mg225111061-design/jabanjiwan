@@ -1,0 +1,26 @@
+module stdlib.selfhost
+
+# Stage 24 — the strongest self-application the executable subset allows: JEFF's own
+# numeric stdlib kernels, written in JEFF, compiled+run by JEFF, output checked bit-for-bit
+# against the independent Rust reference. (Full compiler self-host needs the Stage-23-deferred
+# language features — strings, ADTs, closures — so it is out of scope and reported honestly.)
+
+# fold::faulhaber p=1  →  n*(n+1)/2
+total fn sum_id(n: nat) -> nat:
+    sum i in 0..=n: i
+
+# fold::faulhaber p=2  →  n*(n+1)*(2n+1)/6
+total fn sum_sq(n: nat) -> nat:
+    sum i in 0..=n: i*i
+
+# fold::faulhaber p=3  →  (n*(n+1)/2)^2
+total fn sum_cube(n: nat) -> nat:
+    sum i in 0..=n: i**3
+
+# fold::holonomic  Σ_k C(n,k) = 2^n
+total fn sum_binom(n: nat) -> nat:
+    sum k in 0..=n: C(n, k)
+
+# fold::holonomic  Σ_k k*C(n,k) = n*2^(n-1)
+total fn sum_k_binom(n: nat) -> nat:
+    sum k in 0..=n: k * C(n, k)
