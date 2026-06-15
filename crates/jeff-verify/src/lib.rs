@@ -954,6 +954,23 @@ impl Checker for KernelChecker {
                 }
             }
 
+            // ---- Stage 8: FKT planar perfect matchings (exact vs naive) ----
+            Evidence::PlanarMatchings { n, edges, count } => {
+                let mut adj = vec![0u8; n * n];
+                for &(u, v) in edges {
+                    if u >= *n || v >= *n {
+                        return VerifyResult::Invalid;
+                    }
+                    adj[u * n + v] = 1;
+                    adj[v * n + u] = 1;
+                }
+                if jeff_math::holographic::count_pm_naive(&adj, *n) == *count {
+                    VerifyResult::Valid
+                } else {
+                    VerifyResult::Invalid
+                }
+            }
+
             // ---- Stage 7: tensor-network contraction (exact vs naive) ----
             Evidence::TensorContraction { tensors, dim, n_indices, result } => {
                 if *dim == 0 || dim.checked_pow(*n_indices as u32).is_none() {
@@ -1041,7 +1058,8 @@ impl Checker for DefaultRegistry {
             | Evidence::Junta { .. }
             | Evidence::ListDecode { .. }
             | Evidence::NoiseSensitivity { .. }
-            | Evidence::TensorContraction { .. } => KernelChecker.check(ev, ob, b),
+            | Evidence::TensorContraction { .. }
+            | Evidence::PlanarMatchings { .. } => KernelChecker.check(ev, ob, b),
         }
     }
 }
@@ -1102,6 +1120,7 @@ pub fn checker_name(ev: &Evidence) -> &'static str {
         Evidence::ListDecode { .. } => "rs-agreement-exact",
         Evidence::NoiseSensitivity { .. } => "wht-noise-sensitivity",
         Evidence::TensorContraction { .. } => "tensor-naive-replay",
+        Evidence::PlanarMatchings { .. } => "fkt-naive-pm-replay",
     }
 }
 
@@ -1648,6 +1667,19 @@ mod tests {
         let parity = vec![1.0, -1.0, -1.0, 1.0];
         let ev = Evidence::LowDegree { table: parity, k: 1, tail_bound: 0.1 };
         assert!(verify(cert(ev)).is_none());
+    }
+
+    // ===== Stage 8: FKT planar perfect-matching certificate =====
+
+    #[test]
+    fn planar_matchings_valid_and_false_rejected() {
+        let edges = vec![(0, 1), (1, 2), (2, 3), (3, 0)]; // C4: 2 matchings
+        let good = Evidence::PlanarMatchings { n: 4, edges: edges.clone(), count: 2 };
+        assert_eq!(good.cert_class(), jeff_cert::CertClass::Exact);
+        assert!(verify(cert(good)).is_some());
+        // false_matching_count_rejected
+        let bad = Evidence::PlanarMatchings { n: 4, edges, count: 7 };
+        assert!(verify(cert(bad)).is_none());
     }
 
     // ===== Stage 7: tensor-network contraction certificate =====

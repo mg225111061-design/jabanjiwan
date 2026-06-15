@@ -3,9 +3,13 @@ name = "jeff-collapse-holographic"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "GACC crate jeff-collapse-holographic (stub; see CLAUDE.md). Will be implemented per build order PART 9."
+description = "Layer 3: holographic/FKT planar perfect-matching count (CLAUDE.md PART E / 10.5). Pfaffian collapse with an exact naive-replay certificate; non-planar → defer (Cai–Lu)."
 
 [dependencies]
+jeff-math = { workspace = true }
+jeff-cert = { workspace = true }
+jeff-verify = { workspace = true }
+jeff-span = { workspace = true }
 
 [lints]
 workspace = true

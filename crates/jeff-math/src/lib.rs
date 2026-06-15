@@ -15,6 +15,7 @@ pub mod fourier;
 pub mod frame;
 pub mod geometry;
 pub mod gf2;
+pub mod holographic;
 pub mod hyper;
 pub mod lattice;
 pub mod linsolve;

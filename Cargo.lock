@@ -215,6 +215,12 @@ dependencies = [
 [[package]]
 name = "jeff-collapse-holographic"
 version = "0.1.0"
+dependencies = [
+ "jeff-cert",
+ "jeff-math",
+ "jeff-span",
+ "jeff-verify",
+]
 
 [[package]]
 name = "jeff-collapse-tensor"

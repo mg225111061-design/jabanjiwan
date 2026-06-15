@@ -634,6 +634,16 @@ pub enum Evidence {
         n_indices: usize,
         result: i64,
     },
+
+    // ---- Stage 8: holographic / FKT planar perfect matchings (exact) ----
+    /// FKT count: an undirected graph on `n` vertices with `edges` has `count` perfect
+    /// matchings. Checker recomputes the **naive** perfect-matching count and compares
+    /// (the Pfaffian method is the kernel; the naive oracle is the P0 guard).
+    PlanarMatchings {
+        n: usize,
+        edges: Vec<(usize, usize)>,
+        count: u64,
+    },
 }
 
 impl Evidence {
@@ -718,6 +728,8 @@ impl Evidence {
             | Evidence::NoiseSensitivity { .. } => CertClass::HighProbability,
             // Stage 7: exact contraction vs naive.
             Evidence::TensorContraction { .. } => CertClass::Exact,
+            // Stage 8: exact count vs naive perfect-matching enumeration.
+            Evidence::PlanarMatchings { .. } => CertClass::Exact,
         }
     }
 }
