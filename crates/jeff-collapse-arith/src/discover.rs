@@ -215,6 +215,55 @@ impl FoldCache {
     }
 }
 
+/// The unified four-axis verdict (Stage 16.5). The verifier — not a heuristic — decides
+/// every axis at once: if a fold exists, all four axes move off the floor (carried by the
+/// fold's certificate); if no fold of the tried classes exists, the input genuinely sits on
+/// the information floor and JEFF drops to Tier D, paying Ω(N), with the absence certificate
+/// proving that is optimal up to (class, Θ). Maximally aggressive in the attempt, never wrong
+/// in the gate.
+#[allow(clippy::large_enum_variant)]
+pub enum Verdict {
+    /// Structure found: WHEN → compile-time closed form, HOW-MANY → cacheable, COMPOSE →
+    /// fusible, PRECISION → exact. `marginal` is the (honest, asymptotic) N-th-term cost the
+    /// recurrence licenses.
+    Optimized {
+        order: usize,
+        degree: usize,
+        operator: Vec<BigInt>,
+        marginal: &'static str,
+        cert: VerifiedCertificate,
+    },
+    /// On the floor: no fold of the tried classes exists (absence-certified) → pay Ω(N),
+    /// proven optimal up to (class, Θ). No axis move is licensed.
+    Floor {
+        paid: &'static str,
+        absence: Vec<AbsenceItem>,
+    },
+}
+
+impl Verdict {
+    pub fn is_optimized(&self) -> bool {
+        matches!(self, Verdict::Optimized { .. })
+    }
+}
+
+/// The unified four-axis optimizer (Stage 16.5): one global, certificate-carrying decision.
+/// Drives WHEN/HOW-MANY/COMPOSE/PRECISION from a single verified recognition of the input.
+pub fn plan_sequence(samples: &[BigInt], max_order: usize, max_degree: usize) -> Verdict {
+    match discover_sequence(samples, max_order, max_degree) {
+        Discovery::Found { order, degree, operator, cert, .. } => Verdict::Optimized {
+            order,
+            degree,
+            operator,
+            // a D-finite recurrence gives a sublinear N-th term (Bostan–Mori: O(log N) for
+            // C-finite, O(M(d) log N) for D-finite) — an asymptotic fact, not an overclaim.
+            marginal: "sublinear N-th term via the recurrence (O(log N) for C-finite)",
+            cert,
+        },
+        Discovery::Absent { tried } => Verdict::Floor { paid: "Omega(N)", absence: tried },
+    }
+}
+
 /// Stage 16.2 — universal verified memoization, keyed by the **certificate** (same verified
 /// *meaning*, not same bytes of input). A given verified computation is stored once, ever; a
 /// hit returns a result that is trusted only via its attached certificate, re-verifiable
@@ -367,6 +416,57 @@ mod tests {
         assert!(entry.found);
         let c = entry.cert.certificate().clone();
         assert!(jeff_verify::verify(c).is_some(), "cached cert must re-verify");
+    }
+
+    #[test]
+    fn four_axis_preserves_result() {
+        // Stage 16.5: a structured input is Optimized; the off-the-floor move (WHEN/COMPOSE)
+        // preserves the result — generating from the recurrence reproduces the input exactly.
+        let n = 20;
+        let mut fib = vec![BigInt::from(0), BigInt::from(1)];
+        while fib.len() < n {
+            let k = fib.len();
+            fib.push(&fib[k - 1] + &fib[k - 2]);
+        }
+        match plan_sequence(&fib, 4, 0) {
+            Verdict::Optimized { order, operator, cert, .. } => {
+                assert!(jeff_verify::verify(cert.certificate().clone()).is_some());
+                let op: Vec<BigRational> =
+                    operator.iter().map(|x| BigRational::from(x.clone())).collect();
+                let gen = jeff_math::recurrence::generate_cfinite(&fib[..order], &op, n).unwrap();
+                let fib_rat: Vec<BigRational> =
+                    fib.iter().map(|x| BigRational::from(x.clone())).collect();
+                assert_eq!(gen, fib_rat, "the optimized plan preserves the result");
+            }
+            Verdict::Floor { .. } => panic!("Fibonacci is structured — must be Optimized"),
+        }
+    }
+
+    #[test]
+    fn floor_reached_emits_certificate() {
+        // Stage 16.5: a genuinely structureless input sits on the floor — JEFF pays Ω(N) and
+        // the absence certificate proves that is optimal (up to the class, Θ). No fabrication.
+        let mut x = 0xF100_0F100_u64.wrapping_mul(0x9E37_79B9);
+        let s: Vec<BigInt> = (0..44)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                BigInt::from((x % 997) as i64)
+            })
+            .collect();
+        match plan_sequence(&s, 2, 1) {
+            Verdict::Floor { paid, absence } => {
+                assert_eq!(paid, "Omega(N)");
+                assert!(!absence.is_empty(), "the floor verdict must carry absence proofs");
+                for item in &absence {
+                    assert_eq!(item.class, "D-finite");
+                    assert!(item.theta.contains("N=44"));
+                    assert!(jeff_verify::verify(item.cert.certificate().clone()).is_some());
+                }
+            }
+            Verdict::Optimized { .. } => panic!("high-entropy input must hit the floor"),
+        }
     }
 
     #[test]
