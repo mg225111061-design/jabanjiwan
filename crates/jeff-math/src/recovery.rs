@@ -133,10 +133,26 @@ pub fn idft_sparse(support: &[(usize, f64, f64)], n: usize) -> Vec<f64> {
     x
 }
 
+/// Spectrum of a real signal: the O(n log n) radix-2 FFT when `n` is a power of two,
+/// otherwise the O(n²) DFT. Same sign convention as [`dft_real`] — mathematically identical,
+/// only faster (Stage 17.3 self-relative upgrade). The downstream residual certificate
+/// re-validates either way (the cert checks the recovered support, not how it was found).
+pub fn dft_real_fast(x: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let n = x.len();
+    if n > 1 && n.is_power_of_two() {
+        let input: Vec<crate::complex::Complex> =
+            x.iter().map(|&v| crate::complex::Complex::new(v, 0.0)).collect();
+        let spec = crate::sparsefft::fft_radix2(&input);
+        (spec.iter().map(|c| c.re).collect(), spec.iter().map(|c| c.im).collect())
+    } else {
+        dft_real(x)
+    }
+}
+
 /// Recover the `k` heaviest spectral bins of a real signal (support = the k largest
 /// `|X[f]|`). Returns `(freq, re, im)` triples.
 pub fn sparse_fft(x: &[f64], k: usize) -> Vec<(usize, f64, f64)> {
-    let (re, im) = dft_real(x);
+    let (re, im) = dft_real_fast(x);
     let n = x.len();
     let mut idx: Vec<usize> = (0..n).collect();
     idx.sort_by(|&a, &b| {
@@ -236,6 +252,52 @@ pub fn factor_entry(u: &FMat, v: &FMat, i: usize, j: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn peak_bin(re: &[f64], im: &[f64]) -> usize {
+        (0..re.len())
+            .max_by(|&a, &b| {
+                (re[a] * re[a] + im[a] * im[a])
+                    .partial_cmp(&(re[b] * re[b] + im[b] * im[b]))
+                    .unwrap()
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn dft_fast_matches_naive_within_tol() {
+        // FFT path (power-of-two n) equals the naive DFT to float tolerance (same convention).
+        let x = vec![1.0, 2.0, 3.0, 4.0, 4.0, 3.0, 2.0, 1.0];
+        let (rf, imf) = dft_real_fast(&x);
+        let (rs, is) = dft_real(&x);
+        for f in 0..x.len() {
+            assert!((rf[f] - rs[f]).abs() < 1e-9, "re[{f}] differs");
+            assert!((imf[f] - is[f]).abs() < 1e-9, "im[{f}] differs");
+        }
+    }
+
+    #[test]
+    fn fft_beats_naive_dft_at_large_n() {
+        // self-relative O(n log n) vs O(n²): same dominant bin, far faster at large n.
+        let n = 4096usize;
+        let x: Vec<f64> = (0..n)
+            .map(|t| (std::f64::consts::TAU * 5.0 * t as f64 / n as f64).cos())
+            .collect();
+        let t0 = std::time::Instant::now();
+        let (rf, imf) = dft_real_fast(&x);
+        let fft = t0.elapsed().as_secs_f64().max(1e-12);
+        let t1 = std::time::Instant::now();
+        let (rs, is) = dft_real(&x);
+        let dft = t1.elapsed().as_secs_f64();
+        // a real cosine at freq 5 peaks symmetrically at bins 5 and n−5 (equal magnitude);
+        // both paths land on that pair (the tie may break either way under float rounding).
+        let pair = [5usize, n - 5];
+        assert!(pair.contains(&peak_bin(&rf, &imf)), "FFT peaks at freq 5 (or its mirror)");
+        assert!(pair.contains(&peak_bin(&rs, &is)), "DFT peaks at freq 5 (or its mirror)");
+        assert!(
+            fft * 10.0 < dft,
+            "FFT must dominate naive DFT at n={n} (fft {fft:.6}s, dft {dft:.6}s)"
+        );
+    }
 
     #[test]
     fn omp_recovers_exact_sparse_signal() {
