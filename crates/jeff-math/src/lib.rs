@@ -42,6 +42,7 @@ pub mod recurrence;
 pub mod recovery;
 pub mod ratfun;
 pub mod riccati;
+pub mod sos;
 pub mod sparsefft;
 pub mod sparsefft2d;
 pub mod streaming;

@@ -6,3 +6,7 @@
 Cargo.lock.bak
 /jeff-stage0.bundle
 /patches/
+
+# Stage 29/30 reference kernels (external behavioral specs, not source)
+kernels/
+install_kernels.sh
