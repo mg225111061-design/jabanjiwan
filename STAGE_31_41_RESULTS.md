@@ -202,3 +202,20 @@ observational equivalence. Tests: `hbfc_gated_by_strength_audit`, `hydra_measure
 `fusion_terminates_or_downgraded`, `fusion_law_semantic_preservation` (4).
 
 Both verification-power. Workspace green, clippy clean, verifier 49/0.
+
+---
+
+## §C.39 — PQC FIPS-203/204 ACVP byte-encoding — **BUILT (already complete; verified still green)**
+
+**Premise note (rule 4):** this gap was **already closed in prior sessions** (ML-KEM-768 commit
+`7352d73`, ML-DSA-44 commit `340d6cf`) — the external-validation §5 FAIL was fixed then. Stage 39
+re-verifies it holds (no new code needed; recorded honestly as already-done, not re-claimed).
+
+- **ML-KEM-768 (FIPS 203)**: official NIST ACVP keyGen/encaps/decaps **byte-for-byte PASS** (the
+  root fix was the matrix Â XOF byte order `ρ‖j‖i`; ByteEncode₁₂(t̂)‖ρ etc. exact).
+- **ML-DSA-44 (FIPS 204)**: official NIST ACVP keyGen/sigGen/sigVer **byte-for-byte PASS** (fixes:
+  ExpandA SHAKE128 not SHAKE256; `ρ''=H(K‖rnd‖μ)`; w1Encode 6-bit; full BitPack/HintBitPack codecs).
+- Embedded official ACVP vectors in `jeff-math mod acvp_kat` (network-free regression): **6/6 green**.
+- No regression: mlkem 8/8, mldsa 5/5 (roundtrip + reject), 48 reject/tamper/false tests across the
+  workspace. Certificate: **integer-exact** (byte-for-byte vs official KAT). PQC status:
+  **official-FIPS-KAT-verified** (the trusted→verified jump, retained). Verifier 49/0.
