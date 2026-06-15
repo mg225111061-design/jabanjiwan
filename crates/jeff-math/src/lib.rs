@@ -31,6 +31,7 @@ pub mod prony;
 pub mod recovery;
 pub mod ratfun;
 pub mod riccati;
+pub mod sparsefft;
 pub mod streaming;
 pub mod tensornet;
 
