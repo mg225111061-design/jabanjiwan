@@ -65,6 +65,22 @@ def verify_program_parallel(src: str, workers: int = 4) -> List[mr_haran.FnRepor
         return list(ex.map(_verify_idx, range(len(fns)), chunksize=max(1, len(fns) // (workers * 4))))
 
 
+def verify_subset_parallel(fns: list, ftab: dict, proc_names: set, workers: int = 4):
+    """Verify a given subset of functions in parallel (used by the cache+parallel FastVerifier:
+    only the cache MISSES are re-verified, and those fan out across cores)."""
+    if not fns:
+        return []
+    if workers <= 1 or len(fns) == 1:
+        return [mr_haran.verify_fn(f, ftab, proc_names) for f in fns]
+    _SHARED["fns"], _SHARED["ftab"], _SHARED["proc_names"] = fns, ftab, proc_names
+    try:
+        ctx = mp.get_context("fork")
+    except ValueError:
+        ctx = None
+    with cf.ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as ex:
+        return list(ex.map(_verify_idx, range(len(fns))))
+
+
 @dataclass
 class ParallelMeasurement:
     n_functions: int
