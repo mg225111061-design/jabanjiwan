@@ -315,8 +315,9 @@ class Parser:
         args = []
         while not self.at(">"):
             t = self.peek()
-            if self.at_kind("num"):              # value/term arg (e.g. Vec<Int, 3>)
-                args.append(A.TypeArg("term", self.parse_expr(), self.span(t)))
+            if self.at_kind("num"):              # value/term arg (e.g. Vec<Int, 3>, mod<3329>)
+                # additive precedence: '<'/'>' delimit the generic — NOT comparisons here
+                args.append(A.TypeArg("term", self.parse_add(), self.span(t)))
             else:
                 args.append(A.TypeArg("type", self.parse_type(), self.span(t)))
             if self.at(","):
