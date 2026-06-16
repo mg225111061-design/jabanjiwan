@@ -111,7 +111,33 @@ THEOREMS: Dict[str, Theorem] = {
         "Theorem isort_sorted_all : forall l, Sorted le (isort l).\n"
         "Proof. induction l as [|x t IH]; simpl. constructor. apply insert_sorted, IH. Qed.",
         "manual", "all lists of any length"),
+    # ---- v17 E2.1: additional AUTO-provable unbounded ∀ theorems ----
+    "app_length": Theorem(
+        "app_length", "append is length-additive  len(l1++l2)=len l1+len l2", _ARITH_PREAMBLE,
+        "Theorem app_length_all : forall (A:Type)(l1 l2:list A), length (l1++l2) = length l1 + length l2.\n"
+        "Proof. intros A l1 l2. induction l1; simpl; auto. Qed.",
+        "auto", "all lists of any length"),
+    "map_map": Theorem(
+        "map_map", "map fusion  map g (map f l) = map (g∘f) l", _ARITH_PREAMBLE,
+        "Theorem map_map_all : forall (A B C:Type)(f:A->B)(g:B->C)(l:list A),\n"
+        "  map g (map f l) = map (fun x => g (f x)) l.\n"
+        "Proof. intros. induction l; simpl; [reflexivity | rewrite IHl; reflexivity]. Qed.",
+        "auto", "all lists of any length"),
+    "oddsum": Theorem(
+        "oddsum", "sum of first n odd numbers = n²",
+        "Require Import List Arith Lia.\nImport ListNotations.\n"
+        "Fixpoint oddsum (n:nat) : nat := match n with 0 => 0 | S k => oddsum k + (2*k+1) end.\n",
+        "Theorem oddsum_sq : forall n, oddsum n = n * n.\nProof. induction n; simpl; nia. Qed.",
+        "auto", "all n : nat"),
 }
+
+
+# ---- v17 E2.1: honest automation-boundary probe ----
+def auto_attempt(statement: str, preamble: str, auto_tactic: str = "induction l; simpl; auto.") -> bool:
+    """Try to close `statement` with a PURE-automation proof. Returns True iff coqc accepts it (no
+    helper lemmas). Used to show which theorems automation can/can't reach — honestly."""
+    src = preamble + "\n" + statement + f"\nProof. {auto_tactic} Qed.\n"
+    return prove_coq(src, "auto_try").proven
 
 
 # ----------------------------------------------------------------- discharge

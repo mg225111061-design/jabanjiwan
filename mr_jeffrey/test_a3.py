@@ -68,9 +68,9 @@ def unbounded_proof_attempted():
     # honesty gate: an Admitted proof compiles but must NOT count
     fake = Q.prove_coq("Theorem fake : forall n:nat, n = n.\nProof. Admitted.", "fake")
     gate_ok = (not fake.proven) and fake.has_admit
-    ok = all_proven and sort_unbounded and gate_ok and _SUMMARY.count == 5
-    check("unbounded_proof_attempted", ok, f"proven={_SUMMARY.count}/5 admit_gate={gate_ok}")
-    print(f"      → {_SUMMARY.count}/5 unbounded ∀ proven by Coq (incl. sort for ALL lengths) — "
+    ok = all_proven and sort_unbounded and gate_ok and _SUMMARY.count >= 5   # ≥5 (v17 E2 adds more)
+    check("unbounded_proof_attempted", ok, f"proven={_SUMMARY.count} admit_gate={gate_ok}")
+    print(f"      → {_SUMMARY.count} unbounded ∀ proven by Coq (incl. sort for ALL lengths) — "
           f"vs Z3 baseline length ≤ 4.")
     print(f"      → honesty gate: an `Admitted` proof is NOT counted (proven={fake.proven}, has_admit={fake.has_admit}).")
 
