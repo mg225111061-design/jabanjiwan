@@ -1,0 +1,6 @@
+coproc id(x: UInt) -> (y: UInt)
+  pre x
+  post y
+{
+  y = x
+}

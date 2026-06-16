@@ -1,0 +1,7 @@
+proc coin() -> (x: UInt)
+  pre 0.7
+  post x
+{
+  var b: Bool = flip(0.5)
+  if b { x = 1 } else { x = 0 }
+}
