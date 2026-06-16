@@ -203,6 +203,10 @@ class PNum:
     value: str
     span: Span
 @dataclass
+class PBool:
+    value: bool
+    span: Span
+@dataclass
 class PListEmpty:
     span: Span
 @dataclass

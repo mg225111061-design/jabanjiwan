@@ -506,6 +506,9 @@ class Parser:
         if self.at_kind("num"):
             self.next()
             return A.PNum(t.text, self.span(t))
+        if self.at_kw("true", "false"):
+            self.next()
+            return A.PBool(t.text == "true", self.span(t))
         if self.at_kind("ident"):
             self.next()
             if self.at("("):                     # constructor pattern Ctor(p, ...)
