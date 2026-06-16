@@ -36,6 +36,8 @@ class HFunction:
     source: str          # exact source of this function (for behavioural property testing & slicing)
     start_line: int
     end_line: int
+    lang: str = "python"        # language of `source` (drives runtime.make_callable)
+    signature: dict = field(default_factory=dict)   # frontend-supplied calling info (param/return shapes)
 
     def op_kinds(self) -> set:
         return {o.kind for o in self.ops}
@@ -183,9 +185,19 @@ class FrontendResult:
     detail: str
 
 
+_FRONTEND_MODULES = {"c": "frontend_c", "go": "frontend_go", "rust": "frontend_rust",
+                     "javascript": "frontend_js", "typescript": "frontend_js", "java": "frontend_java"}
+
+
 def to_hir(source: str, filename: Optional[str] = None) -> FrontendResult:
     lang = detect_language(filename, source)
     fe = FRONTENDS.get(lang)
+    if fe is None and lang in _FRONTEND_MODULES:        # lazy-load the frontend, which self-registers
+        try:
+            __import__(_FRONTEND_MODULES[lang])
+            fe = FRONTENDS.get(lang)
+        except Exception as e:
+            return FrontendResult(lang, None, False, f"{lang}: frontend unavailable ({e}) — BLOCKED")
     if fe is None:
         return FrontendResult(lang, None, False,
                               f"{lang}: frontend not implemented (registered extension point; DEFER)")

@@ -21,9 +21,14 @@ import hir
 
 # ----------------------------------------------------------------- compile HIR fn → callable
 def compile_callable(hfn: hir.HFunction, glb: Optional[dict] = None):
-    ns: dict = {} if glb is None else dict(glb)
-    exec(hfn.source, ns)
-    return ns[hfn.name]
+    """Language-agnostic: Python execs in-process; other languages compile+run via runtime.make_callable
+    (the same engine then tests the REAL native output)."""
+    if getattr(hfn, "lang", "python") == "python" and glb is not None:
+        ns: dict = dict(glb)
+        exec(hfn.source, ns)
+        return ns[hfn.name]
+    import runtime
+    return runtime.make_callable(hfn, glb)
 
 
 # ----------------------------------------------------------------- property model

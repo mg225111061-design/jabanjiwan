@@ -120,6 +120,10 @@ def causal_experiment(hfn: hir.HFunction, op: OpScore, violated_prop: PR.Propert
                       inputs: List[list]) -> CausalResult:
     """Mutate operators on the suspect op's line(s); if a mutant makes the violated property HOLD on all
     inputs, the operation is causally responsible (the bug lives there)."""
+    if getattr(hfn, "lang", "python") != "python":
+        # operator mutation uses Python's ast; a C/Go/Rust/JS mutator is DEFER. Static LR still localizes.
+        return CausalResult(False, op.lines[0] if op.lines else 0, op.op_kind,
+                            f"causal mutation is Python-only (DEFER for {hfn.lang}); static narrowing stands")
     for line in op.lines:
         for mut_src in _mutants_at_line(hfn.source, line):
             try:
