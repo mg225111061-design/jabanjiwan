@@ -30,15 +30,25 @@ fn binom_nk() -> HyperTerm {
 
 fn main() {
     let which = std::env::args().nth(1).unwrap_or_else(|| "binom".into());
+    // optional search-order bound — raising it grows the (Gröbner-style) linear system; this is the
+    // double-exponential ceiling we measure honestly.
+    let max_order: usize = std::env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(2);
     let term = match which.as_str() {
-        "binom" => binom_nk(),         // Σ_k C(n,k) = 2^n
-        "binom_sq" => binom_nk().pow(2), // Σ_k C(n,k)^2 = C(2n,n)
+        "binom" => binom_nk(),            // Σ_k C(n,k)   = 2^n           (order-1)
+        "binom_sq" => binom_nk().pow(2),  // Σ_k C(n,k)^2 = C(2n,n)       (order-1)
+        "binom_cube" => binom_nk().pow(3), // Σ_k C(n,k)^3 (Franel)       (order-2)
+        "binom_quad" => binom_nk().pow(4), // Σ_k C(n,k)^4                (order-3)
         _ => {
-            eprintln!("usage: zeil_check binom | binom_sq");
+            eprintln!("usage: zeil_check binom|binom_sq|binom_cube|binom_quad [max_order]");
             std::process::exit(2);
         }
     };
-    match zeilberger(&term, &Bounds::default()) {
+    let bounds = Bounds {
+        max_order,
+        max_rnum_deg_k: 2 * max_order + 2,
+        max_coeff_deg_n: max_order + 1,
+    };
+    match zeilberger(&term, &bounds) {
         Some(t) => {
             let verified = telescoper_holds(&term, &t.l, &t.r);
             // The checker verifies the telescoping IDENTITY exactly. The boundary-term provisos
