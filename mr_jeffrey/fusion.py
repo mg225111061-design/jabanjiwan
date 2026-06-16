@@ -307,3 +307,47 @@ def z3_inject(hfn: hir.HFunction, source: Optional[str] = None) -> Z3Verdict:
                          None, "properties as spec proxy")
     return Z3Verdict("PROPERTY-ONLY", f"no user spec; {len(props)} properties hold (weak without a spec)",
                      None, "properties as spec proxy")
+
+
+# ===================================================================================================
+# D3 — HIR → Coq unbounded-∀ injection (route all-lengths goals to Coq, beyond Z3's bounded reach).
+# ===================================================================================================
+import haran_coq  # noqa: E402
+
+
+@dataclass
+class CoqVerdict:
+    available: bool
+    attempted: list
+    proven: list
+    mode: dict                # theorem -> auto|manual
+    detail: str
+
+
+def coq_inject(hfn: hir.HFunction, n: int = 60) -> CoqVerdict:
+    """If B flags a sort-shaped function that PASSES bounded checks, the open question is whether it holds
+    for ALL lengths — which Z3 cannot decide (no induction). Route that unbounded-∀ goal to Coq (v16 A3).
+    Honest: Coq proves the canonical sortedness/permutation theorems for all lengths (vs Z3 length≤4);
+    translating an ARBITRARY user algorithm into Coq is semi-automatic → DEFER."""
+    try:
+        fn = PR.compile_callable(hfn)
+        props = PR.extract_properties(hfn)
+        rep = PT.test_properties(fn, props, PT.gen_int_lists(n))
+    except Exception as e:
+        return CoqVerdict(False, [], [], {}, f"could not run bounded checks ({e})")
+    names = {p.name for p in props}
+    if "ordered_output" not in names:
+        return CoqVerdict(haran_coq.coq_available(), [], [], {},
+                          "not a sort-shaped unbounded-∀ goal (Coq routing applies to recognized shapes)")
+    if "ordered_output" in rep.violated_properties():
+        return CoqVerdict(haran_coq.coq_available(), [], [], {},
+                          "sortedness FAILS on samples — this is a bug; fix before any unbounded proof")
+    if not haran_coq.coq_available():
+        return CoqVerdict(False, [], [], {}, "Coq BLOCKED → Z3 bounded (length ≤ 4) is the only fallback")
+    attempt = ["isort_sorted", "isort_perm"]
+    results = [haran_coq.prove_property(nm) for nm in attempt]
+    proven = [r.name for r in results if r.proven]
+    mode = {r.name: r.mode for r in results}
+    return CoqVerdict(True, attempt, proven, mode,
+                      "Coq proves sortedness + permutation for ALL lengths (vs Z3 length ≤ 4); translating "
+                      "THIS specific algorithm to Coq is semi-automatic → DEFER")
