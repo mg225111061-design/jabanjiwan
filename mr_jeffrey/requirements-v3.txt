@@ -1,0 +1,5 @@
+# HARAN v3 (X1+) extra dependency: the Z3 relational proof backend.
+# Install:  pip install -r mr_jeffrey/requirements-v3.txt
+# If absent, v3 degrades HONESTLY: error bounds fall back to TESTED-BOUND (fuzz), never fake PROVEN.
+z3-solver>=4.12
+sympy>=1.12
