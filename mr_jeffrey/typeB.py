@@ -66,7 +66,7 @@ def analyze(source: str, filename: Optional[str] = None, n_random: int = 400,
     cert = DP.digit_certificate(innocent.op_kind, res.innocent_posterior, len(inputs), viol_inputs)
     brep = RPT.build_report(hfn, n_random=n_random, proven_digit=f"{cert.proven_upper:.1e}")
     fixed = False
-    if do_fix:
+    if do_fix and fr.lang == "python":     # mutation-repair fix loop is Python-only (others → DEFER)
         fr2 = FL.ai_fix_loop(hfn)
         fixed = fr2.fixed
     return TypeBResult(

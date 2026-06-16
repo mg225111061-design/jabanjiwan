@@ -46,8 +46,9 @@ def _compile(hfn: hir.HFunction) -> str:
     d = tempfile.mkdtemp()
     src, binp = os.path.join(d, "m.go"), os.path.join(d, "m.bin")
     open(src, "w").write(_harness(hfn))
-    r = subprocess.run([_GO, "build", "-o", binp, src], capture_output=True, text=True, timeout=60,
-                       env={**os.environ, "GOFLAGS": "-mod=mod", "GO111MODULE": "off", "GOCACHE": os.path.join(d, "gc")})
+    gocache = os.path.join(tempfile.gettempdir(), "haran_gocache")   # persistent → fast repeat builds
+    r = subprocess.run([_GO, "build", "-o", binp, src], capture_output=True, text=True, timeout=90,
+                       env={**os.environ, "GO111MODULE": "off", "GOCACHE": gocache})
     if r.returncode != 0:
         raise RuntimeError(f"go build failed: {r.stderr[:200]}")
     _BIN[key] = binp
