@@ -26,7 +26,7 @@ KEYWORDS = {
     "match", "let", "fold", "cofix", "yield", "in", "own", "mut", "true", "false",
 }
 # two-char operators (checked before single-char); '..' before '.', '->' before '-', etc.
-OPS2 = ["->", "=>", "++", "..", "==", "!=", ">=", "<=", "&&", "||"]
+OPS2 = ["**", "->", "=>", "++", "..", "==", "!=", ">=", "<=", "&&", "||"]
 OPS1 = set("(){}[],:;|&<>=+-*/%.!~")
 UNI_OPS = set("∧∨¬≤≥≠≡⊂⊆∈→λ∀∃")
 
@@ -390,7 +390,14 @@ class Parser:
         if self.at(*UN_OPS):
             t = self.next()
             return A.Un(t.text, self.parse_unary(), self.span(t))
-        return self.parse_postfix()
+        return self.parse_pow()
+
+    def parse_pow(self):
+        base = self.parse_postfix()
+        if self.at("**"):                        # right-assoc: postfix ** unary  (grammar A.8)
+            t = self.next()
+            return A.Bin("**", base, self.parse_unary(), self.span(t))
+        return base
 
     def parse_postfix(self):
         e = self.parse_primary()
