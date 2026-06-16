@@ -14,12 +14,15 @@ CLOSED.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import hir
 import properties as PR
+import property_test as PT
 import closure_classifier as CC
+import prove_exact
 from haran_parser import parse as haran_parse
 
 
@@ -240,3 +243,67 @@ def fold_inject(hfn: hir.HFunction) -> FusionResult:
                             "closed form matches the real loop on samples" if ok
                             else "closed form did NOT match the loop — not claimed (honest)")
     return FusionResult(v.kind, v.closed_form, v.proof, False, v.proof)
+
+
+# ===================================================================================================
+# D2 — HIR → Z3 correctness injection (formal verification into general-language code).
+# ===================================================================================================
+@dataclass
+class Z3Verdict:
+    tier: str                 # PROVEN | FAILED | PROPERTY-ONLY | UNKNOWN
+    detail: str
+    spec: Optional[str]
+    method: str
+    counterexample: Optional[dict] = None
+
+
+def extract_spec(source: str) -> Optional[str]:
+    """User spec from a comment/decorator, e.g. `# ensures result == n*(n+1)/2`."""
+    m = re.search(r"ensures\s+result\s*(?:==|=)\s*(.+)", source)
+    return m.group(1).strip().rstrip(";") if m else None
+
+
+def _fold_parts(hfn: hir.HFunction):
+    lang = getattr(hfn, "lang", "python")
+    if lang == "c":
+        return extract_sum_c(hfn)
+    if lang == "python":
+        return extract_sum_python(hfn)
+    return None
+
+
+def z3_inject(hfn: hir.HFunction, source: Optional[str] = None) -> Z3Verdict:
+    """If the code carries a spec and the loop is fold-expressible → prove (or refute) it ∀ with the
+    HARAN/Z3 pipeline. If there is NO spec → fall back to properties as the spec proxy (honest: a
+    spec-less check is only as strong as the properties). `source` lets the caller pass the full file
+    text (a spec comment may sit ABOVE the function, outside hfn.source)."""
+    spec = extract_spec(source or hfn.source)
+    parts = _fold_parts(hfn)
+    foldable = parts is not None and parts[0] not in ("__RECUR__", "__DATA__", "__RANGE__")
+    if spec and foldable:
+        binder, lo, hi, summand = parts
+        src = (f"fn g(n: Nat) -> Nat\n  ensures result = {spec}\n"
+               f"{{ fold {binder} in {lo}..{hi} {{ {summand} }} }}")
+        try:
+            fn = haran_parse(src).items[0]
+            v = prove_exact.prove_correctness(fn, {"g": fn})
+        except Exception as e:
+            return Z3Verdict("UNKNOWN", f"spec synthesis/parse failed ({e})", spec, "-")
+        tier = "PROVEN" if v.proven() else ("FAILED" if v.tier == "FAILED" else "UNKNOWN")
+        return Z3Verdict(tier, v.detail, spec, "Z3/JEFF exact ∀ over the fold closed form", v.counterexample)
+    if spec and not foldable:
+        return Z3Verdict("UNKNOWN", "spec present but loop not fold-expressible → only bounded checks apply",
+                         spec, "bounded (no symbolic closed form)")
+    # no spec → properties proxy (B2/B3)
+    try:
+        fn = PR.compile_callable(hfn)
+        props = PR.extract_properties(hfn)
+        rep = PT.test_properties(fn, props, PT.gen_int_lists(120))
+        viol = rep.violated_properties()
+    except Exception as e:
+        return Z3Verdict("UNKNOWN", f"no spec; property proxy failed ({e})", None, "properties (no spec)")
+    if viol:
+        return Z3Verdict("FAILED", f"no user spec; properties used as spec → violated {viol}",
+                         None, "properties as spec proxy")
+    return Z3Verdict("PROPERTY-ONLY", f"no user spec; {len(props)} properties hold (weak without a spec)",
+                     None, "properties as spec proxy")
