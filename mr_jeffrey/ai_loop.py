@@ -59,15 +59,28 @@ class LoopResult:
     trace: List[LoopStep] = field(default_factory=list)
 
 
+def minimal_feedback(v: LoopVerdict) -> str:
+    """Structural MINIMAL counterexample (TraceCoder-style): strip to the single smallest failing
+    input + the exact mismatch, removing noise so the fix is targeted."""
+    cx = v.counterexample or {}
+    inputs = cx.get("inputs", {})
+    impl = cx.get("impl_value", cx.get("result"))
+    spec = cx.get("spec_value")
+    if inputs and impl is not None and spec is not None:
+        return f"minimal counterexample: at {inputs}, your output = {impl} but the spec requires {spec}."
+    if inputs:
+        return f"minimal counterexample: fails at {inputs}."
+    return v.feedback
+
+
 def _fix_prompt(task: str, code: str, v: LoopVerdict) -> str:
-    cx = f"\nConcrete counterexample: {v.counterexample}" if v.counterexample else ""
-    return (f"{task}\n\nYour previous attempt was REJECTED by the verifier:\n{code}\n\n"
-            f"Mr.Jeffrey: {v.status} — {v.feedback}{cx}\n"
-            f"Fix exactly this and return the corrected HARAN function only.")
+    return (f"{task}\n\nYour previous attempt was REJECTED:\n{code}\n\n"
+            f"Mr.Jeffrey [{v.status}]: {minimal_feedback(v)}\n"
+            f"Fix exactly this one issue and return the corrected HARAN function only.")
 
 
 def write_verify_fix(task: str, writer: Callable[[str], str], verifier: Callable[[str], str],
-                     max_iters=6, verbose=True) -> LoopResult:
+                     max_iters=3, verbose=True) -> LoopResult:
     """Drive the loop. iter 0 uses the writer (think-off); later iters use the verifier (think-on)."""
     prompt = task
     res = LoopResult(False, 0)
@@ -86,3 +99,16 @@ def write_verify_fix(task: str, writer: Callable[[str], str], verifier: Callable
         prompt = _fix_prompt(task, code, v)
     res.iters = max_iters
     return res
+
+
+# --- P3: grammar guidance + parse-failure measurement (Claude API has no GBNF; we guide + measure) ---
+HARAN_GRAMMAR_HINT = (
+    "Output ONLY a HARAN function: `fn name(p: T) -> R ensures <expr> effects pure { <body> }`. "
+    "Bodies use match / fold k in lo..hi { e } / let / arithmetic. No prose, no markdown fences."
+)
+
+def measure_parse_failures(codes):
+    from haran_parser import parse
+    fails = sum(1 for c in codes if parse(c).errors)
+    return {"n": len(codes), "parse_failures": fails,
+            "rate": (fails / len(codes)) if codes else 0.0}

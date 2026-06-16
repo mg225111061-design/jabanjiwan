@@ -233,6 +233,28 @@ def get_writer_verifier(prefer="qwen3", base_url="http://localhost:11434/v1", mo
             ScriptedLLM(scripted_verifier or scripted_writer or [""]), "sim")
 
 
+def get_claude_writer_verifier(scripted_writer=None, scripted_verifier=None, model="claude-sonnet-4-6",
+                               verbose=True):
+    """Return (writer, verifier, mode) for the AI loop. LIVE Claude if ANTHROPIC_API_KEY is set
+    (read from env ONLY — never logged), else an honest ScriptedLLM SIMULATION. Writer and verifier
+    are SEPARATE adapter instances ⇒ separate contexts (anti self-deception)."""
+    def warn(m):
+        if verbose:
+            print(f"[mr/llm] {m}")
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            writer = AnthropicAdapter(model=model)
+            verifier = AnthropicAdapter(model=model)   # separate instance = separate context
+            warn(f"using LIVE Claude ({model}); writer/verifier = separate contexts")
+            return writer, verifier, "live"
+        except LLMError as e:
+            warn(f"Claude unavailable ({e}) — falling back to simulation")
+    warn("no ANTHROPIC_API_KEY — SIMULATION (ScriptedLLM). The loop + Mr's counterexamples are REAL; "
+         "only the model text is scripted. Set ANTHROPIC_API_KEY to go live.")
+    return (ScriptedLLM(scripted_writer or [""]),
+            ScriptedLLM(scripted_verifier or scripted_writer or [""]), "sim")
+
+
 def get_adapter(prefer: str = "auto", scripted_attempts=None, verbose=True, **kw):
     """Factory. `prefer` ∈ {auto, anthropic, openai, local, scripted}. `auto` picks the first real
     backend with credentials, else falls back to ScriptedLLM with a printed warning. Returns an

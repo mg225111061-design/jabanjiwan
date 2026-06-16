@@ -60,8 +60,9 @@ def ai_fixes_from_counterexample():
     step1, step2 = res.trace[0], res.trace[1]
     # iter1 failed WITH a real counterexample; that cx was fed into iter2's prompt; iter2 verified
     cx = step1.verdict.counterexample
+    # v7: fix prompt now carries a MINIMAL counterexample (smallest failing input + mismatch)
     ok = (step1.verdict.status == "FAILED" and cx is not None
-          and "counterexample" in step2.prompt.lower() and str(cx) in step2.prompt
+          and "counterexample" in step2.prompt.lower() and str(cx.get("inputs")) in step2.prompt
           and step2.verdict.status == "VERIFIED")
     check("ai_fixes_from_counterexample", ok,
           f"iter1={step1.verdict.status} cx={cx}; cx_in_fix_prompt={'counterexample' in step2.prompt.lower()}; "
