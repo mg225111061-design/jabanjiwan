@@ -184,6 +184,55 @@ class ScriptedLLM:
         return self.complete(prompt)
 
 
+class Qwen3Adapter(LocalAdapter):
+    """Qwen3-32B (4-bit, Apache-2.0) via a local OpenAI-compatible endpoint (Ollama/vLLM).
+    ONE model does both roles via Qwen3's thinking switch:
+      • write (HARAN generation):     thinking OFF (`/no_think`) — fast.
+      • verify-reasoning (fix from cx): thinking ON (`/think`)   — deep.
+    Multi-adapter slots stay open: a writer/verifier can later be different models entirely."""
+
+    name = "qwen3"
+
+    def __init__(self, model="qwen3:32b", base_url="http://localhost:11434/v1", thinking=False, **kw):
+        super().__init__(model=model, base_url=base_url, **kw)
+        self.thinking = thinking
+
+    def _call(self, prompt: str) -> str:
+        # Qwen3 convention: append /think or /no_think to toggle the reasoning trace.
+        return super()._call(prompt + ("\n/think" if self.thinking else "\n/no_think"))
+
+
+def _endpoint_alive(base_url: str, timeout=2) -> bool:
+    root = base_url.rstrip("/").removesuffix("/v1")
+    for url in (root + "/api/tags", base_url.rstrip("/") + "/models"):
+        try:
+            urllib.request.urlopen(url, timeout=timeout)
+            return True
+        except Exception:   # noqa: BLE001
+            continue
+    return False
+
+
+def get_writer_verifier(prefer="qwen3", base_url="http://localhost:11434/v1", model="qwen3:32b",
+                        scripted_writer=None, scripted_verifier=None, verbose=True):
+    """Return (writer, verifier, mode). Live Qwen3-32B if a local endpoint answers, else an HONEST
+    ScriptedLLM SIMULATION (mode='sim') — the write→verify→fix loop and Mr's counterexamples are real
+    regardless; only the model's text is simulated. Writer/verifier are separate slots (swappable to
+    Qwen2.5-Coder-32B for writing, R1-Distill-Qwen-32B for verification, etc.)."""
+    def warn(m):
+        if verbose:
+            print(f"[mr/llm] {m}")
+    if prefer == "qwen3" and _endpoint_alive(base_url):
+        warn(f"using LIVE Qwen3-32B ({model} @ {base_url}); write=think-off, verify=think-on")
+        return (Qwen3Adapter(model=model, base_url=base_url, thinking=False),
+                Qwen3Adapter(model=model, base_url=base_url, thinking=True), "live")
+    warn("no local Qwen3-32B endpoint detected — SIMULATION (ScriptedLLM). "
+         "★ The loop + Mr's counterexamples are REAL; only the model text is scripted. ★ "
+         "Run Ollama with `ollama pull qwen3:32b` to go live.")
+    return (ScriptedLLM(scripted_writer or [""]),
+            ScriptedLLM(scripted_verifier or scripted_writer or [""]), "sim")
+
+
 def get_adapter(prefer: str = "auto", scripted_attempts=None, verbose=True, **kw):
     """Factory. `prefer` ∈ {auto, anthropic, openai, local, scripted}. `auto` picks the first real
     backend with credentials, else falls back to ScriptedLLM with a printed warning. Returns an
