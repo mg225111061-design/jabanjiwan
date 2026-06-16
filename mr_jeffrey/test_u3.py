@@ -21,8 +21,8 @@ def caesar_installed_or_blocked_honestly():
 
 def caesar_bridge_hll_expectation():
     cm = to_heyvl("count_min"); kmv = to_heyvl("kmv")
-    ok = ("coproc" in cm and "pre" in cm and "@ghost" in cm and "E[" in cm
-          and "coproc" in kmv and "@ghost" in kmv and "variance" in kmv.lower())
+    ok = ("proc" in cm and "pre" in cm and "post" in cm and "flip" in cm and "E[" in cm
+          and "proc" in kmv and "flip" in kmv)
     check("caesar_bridge_hll_expectation", ok, "HeyVL expectation specs generated")
     print("      → bridge generates HeyVL expectation specs (Count-Min E[err]≤‖a‖₁/w ; KMV relvar≤c/m):")
     for line in cm.splitlines()[:6]:

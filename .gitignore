@@ -10,3 +10,4 @@ Cargo.lock.bak
 # Stage 29/30 reference kernels (external behavioral specs, not source)
 kernels/
 install_kernels.sh
+tools/

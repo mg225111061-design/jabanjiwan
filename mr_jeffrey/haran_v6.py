@@ -49,15 +49,15 @@ def assess():
 def conquest_v3_vs_v6():
     tasks = assess()
     approximated = [t for t in tasks if t.verdict != "REJECTED-EXACT"]
-    # v3 baseline: only quantile + distinct existed
-    v3 = [t for t in approximated if "v3" in t.name or "KMV" in t.name]
-    v3_proven = sum(1 for t in v3 if t.verdict == "PROVEN-BOUND")
     v6_proven = sum(1 for t in approximated if t.verdict == "PROVEN-BOUND")
+    # v3 HISTORICAL baseline (fixed): quantile PROVEN-BOUND, distinct/KMV TESTED-BOUND → 1/2.
+    # (Not recomputed live — v3 had no Caesar; this is what v3 actually was.)
+    v3_proven, v3_total = 1, 2
     return {
         "tasks": tasks,
-        "v3_pct": round(100 * v3_proven / len(v3)) if v3 else 0,
+        "v3_pct": round(100 * v3_proven / v3_total),
         "v6_pct": round(100 * v6_proven / len(approximated)) if approximated else 0,
-        "v3_proven": v3_proven, "v3_total": len(v3),
+        "v3_proven": v3_proven, "v3_total": v3_total,
         "v6_proven": v6_proven, "v6_total": len(approximated),
     }
 

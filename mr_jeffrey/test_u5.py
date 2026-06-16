@@ -1,6 +1,7 @@
 """STAGE U5 tests (v6) — integration + conquest ratio v3 vs v6. Run: python3 test_u5.py"""
 import haran_v6
 from z3_adapter import z3_available
+from caesar_bridge import caesar_available
 PASS, FAIL, SKIP = [], [], []
 def check(n, c, d=""):
     (PASS if c else FAIL).append(n); print(f"  [{'PASS' if c else 'FAIL'}] {n}" + (f" — {d}" if d and not c else ""))
@@ -25,8 +26,12 @@ def error_type_breakdown_distinct():
     b = haran_v6.error_breakdown()
     # the 4 kinds are distinct: deterministic (Z3) + runtime have proofs; probabilistic empty (Caesar
     # blocked) → stays TESTED; exact rejected. None merged.
-    ok = (len(b["deterministic"]) >= 2 and len(b["runtime"]) >= 1
-          and len(b["probabilistic"]) == 0 and len(b["tested"]) >= 1 and len(b["rejected"]) >= 1)
+    if caesar_available():   # Caesar live (v6.5) → probabilistic PROVEN, no TESTED residual
+        ok = (len(b["deterministic"]) >= 2 and len(b["runtime"]) >= 1
+              and len(b["probabilistic"]) >= 1 and len(b["rejected"]) >= 1)
+    else:                    # Caesar absent (v6) → probabilistic empty, distinct stays TESTED
+        ok = (len(b["deterministic"]) >= 2 and len(b["runtime"]) >= 1
+              and len(b["probabilistic"]) == 0 and len(b["tested"]) >= 1 and len(b["rejected"]) >= 1)
     check("error_type_breakdown_distinct", ok, str({k: len(v) for k, v in b.items()}))
     print(f"      → deterministic(Z3)={b['deterministic']}")
     print(f"      → runtime={b['runtime']}  probabilistic(Caesar)={b['probabilistic'] or '∅ (BLOCKED)'}")
@@ -37,12 +42,12 @@ def showcase_all_approx_correct():
     t = {x.name: x for x in haran_v6.assess()}
     ok = (t["Prony (v6)"].verdict == "PROVEN-BOUND" and t["Prony (v6)"].error_kind.startswith("deterministic")
           and t["CompressedSensing (v6)"].verdict == "PROVEN-BOUND" and "runtime" in t["CompressedSensing (v6)"].error_kind
-          and t["distinct/KMV"].verdict == "TESTED-BOUND"          # Caesar blocked → honest TESTED
+          and t["distinct/KMV"].verdict == ("PROVEN-BOUND" if caesar_available() else "TESTED-BOUND")
           and t["payment"].verdict == "REJECTED-EXACT"
           and t["quantile (v3)"].verdict == "PROVEN-BOUND")
     check("showcase_all_approx_correct", ok, str({k: v.verdict for k, v in t.items()}))
-    print("      → Prony:PROVEN(Z3) · CS:PROVEN(runtime) · KMV:TESTED(Caesar BLOCKED) · "
-          "payment:REJECTED · quantile:PROVEN")
+    print(f"      → Prony:PROVEN(Z3) · CS:PROVEN(runtime) · KMV:{t['distinct/KMV'].verdict} · "
+          f"payment:REJECTED · quantile:PROVEN")
 
 if __name__ == "__main__":
     print("STAGE U5 — integration + conquest ratio v3 vs v6")
