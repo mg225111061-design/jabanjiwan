@@ -271,6 +271,21 @@ class TypeAlias:
 
 
 @dataclass
+class Ctor:
+    name: str
+    arg_types: List[object]
+    span: Span
+
+
+@dataclass
+class DataDecl:
+    name: str
+    generics: List[GenericParam]
+    ctors: List[Ctor]
+    span: Span
+
+
+@dataclass
 class Diagnostic:
     line: int
     col: int

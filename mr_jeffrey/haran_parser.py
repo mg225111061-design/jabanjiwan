@@ -22,7 +22,7 @@ from haran_ast import Span
 
 # ----------------------------------------------------------------------------- lexer
 KEYWORDS = {
-    "fn", "proc", "type", "requires", "ensures", "decreases", "effects", "produces",
+    "fn", "proc", "type", "data", "requires", "ensures", "decreases", "effects", "produces",
     "match", "let", "fold", "cofix", "yield", "in", "own", "mut", "true", "false",
 }
 # two-char operators (checked before single-char); '..' before '.', '->' before '-', etc.
@@ -158,14 +158,14 @@ class Parser:
         self.fail(f"expected {what}, found '{self.peek().text}'")
     def recover_to_item(self):
         # skip to the next top-level item start, so one bad item doesn't poison the rest
-        while not self.eof() and not self.at_kw("fn", "proc", "type"):
+        while not self.eof() and not self.at_kw("fn", "proc", "type", "data"):
             self.next()
 
     # ============================= top level =============================
     def parse_program(self) -> A.Program:
         items = []
         while not self.eof():
-            if self.at_kw("fn", "proc", "type"):
+            if self.at_kw("fn", "proc", "type", "data"):
                 try:
                     items.append(self.parse_item())
                 except _ParseError:
@@ -173,14 +173,37 @@ class Parser:
             else:
                 # stray token at top level
                 self.errors.append(A.Diagnostic(self.peek().line, self.peek().col,
-                                                f"expected 'fn', 'proc' or 'type', found '{self.peek().text}'"))
+                                                f"expected 'fn', 'proc', 'type' or 'data', found '{self.peek().text}'"))
                 self.recover_to_item()
         return A.Program(items, self.errors)
 
     def parse_item(self):
         if self.at_kw("type"):
             return self.parse_type_alias()
+        if self.at_kw("data"):
+            return self.parse_data()
         return self.parse_fn()
+
+    def parse_data(self) -> A.DataDecl:
+        # brace form (consistent with this parser's newline-insensitive style): data Name<g> { Ctor(T,..) ... }
+        start = self.next()                      # 'data'
+        name = self.expect_ident("data type name").text
+        generics = self.parse_generic_params() if self.at("<") else []
+        self.expect("{", "constructor list")
+        ctors = []
+        while not self.at("}") and not self.eof():
+            t = self.expect_ident("constructor name")
+            arg_types = []
+            if self.at("("):
+                self.next()
+                arg_types.append(self.parse_type())
+                while self.at(","):
+                    self.next()
+                    arg_types.append(self.parse_type())
+                self.expect(")")
+            ctors.append(A.Ctor(t.text, arg_types, self.span(t)))
+        self.expect("}", "close data declaration")
+        return A.DataDecl(name, generics, ctors, self.span(start))
 
     # ============================= fn / proc =============================
     def parse_fn(self) -> A.FnDecl:
