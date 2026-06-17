@@ -25,6 +25,7 @@ from typing import Iterator, List, Optional, Tuple
 
 import agentic as AG
 import claude_agent as CA
+import haran_cache as HC
 
 HARAN_HTML = Path(__file__).with_name("haran.html")
 
@@ -175,6 +176,24 @@ def stream_events(payload: Optional[dict]) -> Iterator[str]:
     if opt and opt["optimized"]:
         yield sse_event({"type": "optimized", "closed_form": opt["closed_form"], "speedup": opt["speedup"]})
     yield sse_event({"type": "done", "summary": rd})
+
+
+# ---------------------------------------------------------------------------------------------------
+# T8 — follow-up rounds: conversation history is threaded into agentic_code as context (handle_generate
+# / stream_events already pass `history`); with a real key Claude reflects the prior code+instructions.
+# Incremental re-verify (v21 R4): when a follow-up changes part of a codebase, ONLY the changed function
+# (+ its dependents) re-verifies — so follow-up rounds are perceived-zero. Real measured speedup.
+# ---------------------------------------------------------------------------------------------------
+
+def reverify_incremental(prev_src: str, new_src: str) -> dict:
+    """Re-verify a follow-up edit incrementally (v21 Merkle cache): returns which functions actually
+    re-verified + measured timings/speedup. Unchanged functions are served from cache (not re-proved)."""
+    m = HC.measure_edit_loop(prev_src, new_src)
+    return {"reverified": m.reverified_after_edit,
+            "cold_ms": round(m.cold_s * 1000, 2),
+            "warm_one_edit_ms": round(m.warm_one_edit_s * 1000, 2),
+            "speedup_one_edit": round(m.speedup_one_edit, 1),
+            "speedup_unchanged": round(m.speedup_unchanged, 1)}
 
 
 def _fastapi_available() -> bool:
