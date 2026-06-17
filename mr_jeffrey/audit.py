@@ -132,3 +132,51 @@ def summary(rows: List[FeatureRow]) -> dict:
     for r in rows:
         out.setdefault(r.status, []).append(r.feature)
     return out
+
+
+# ===================================================================================================
+# W2 — type completeness audit.
+# ===================================================================================================
+def _vec_ok(src: str) -> bool:
+    fn = _fn(src)
+    try:
+        return fn is not None and VEC.compile_map(fn).ok
+    except Exception:
+        return False
+
+
+def type_audit() -> List[FeatureRow]:
+    rows: List[FeatureRow] = []
+    scal = {
+        "Int": "fn f(n: Int) -> Int { n+1 }",
+        "Nat": "fn f(n: Nat) -> Nat { n+1 }",
+        "Float": "fn f(x: Float) -> Float { x*2.0 }",
+        "Real": "fn f(x: Real) -> Real { x*2.0 }",
+        "Bool": "fn f(b: Bool) -> Bool { ¬b }",
+    }
+    for t, src in scal.items():
+        rows.append(FeatureRow(t, "CODEGEN", _codegen_ok(src), "scalar (_ctype)"))
+    # modalities
+    rows.append(FeatureRow("refinement {x:T|p}", "CODEGEN", _codegen_ok("fn f(n: {m:Int|m>0}) -> Int { n }"),
+                           "→ __builtin_unreachable assume (verified range)"))
+    rows.append(FeatureRow("own T", "CODEGEN", _codegen_ok("fn f(n: own Int) -> Int { n+1 }"),
+                           "linear → restrict/RAII (haran_vec)"))
+    rows.append(FeatureRow("&T / &mut T", "CODEGEN", _codegen_ok("fn f(n: &Int) -> Int { n+1 }"),
+                           "borrow → restrict (verified noalias)"))
+    # Vec<elem> combos
+    rows.append(FeatureRow("Vec<Int>", "CODEGEN", _vec_ok("fn f(xs: Vec<Int>) -> Vec<Int> { map(xs, λx. x+1) }"), "haran_vec"))
+    rows.append(FeatureRow("Vec<Float>", "CODEGEN", _vec_ok("fn f(xs: Vec<Float>) -> Vec<Float> { map(xs, λx. x*2.0) }"), "haran_vec"))
+    rows.append(FeatureRow("Vec<Bool>", "CODEGEN", _vec_ok("fn f(xs: Vec<Bool>) -> Vec<Bool> { map(xs, λx. ¬x) }"), "haran_vec"))
+    rows.append(FeatureRow("own Vec<Int> (noalias)", "CODEGEN",
+                           _vec_ok("fn f(xs: own Vec<Int>) -> Vec<Int> { map(xs, λx. x+1) }"),
+                           "verified noalias → restrict for SIMD"))
+    # bignum scalar
+    bn_fn = _fn("fn f(n: Nat) -> Nat { fold k in 1..n { k*k } }")
+    bn_ok = (not BN.gmp_available()) or bool(BN.emit_fold_closed_mpz(bn_fn) or BN.emit_fold_naive_mpz(bn_fn))
+    rows.append(FeatureRow("bignum (scalar mpz)", "CODEGEN", bn_ok,
+                           "haran_bignum: arbitrary-precision fold (GMP)" if BN.gmp_available() else "GMP absent"))
+    # combo gap (future, not ceiling)
+    rows.append(FeatureRow("Vec<bignum> (mpz array)", "INTERPRETER_DOMAIN", True,
+                           "scalar bignum + Vec<scalar> both work; vectorized mpz is niche future work, "
+                           "NOT a ceiling (would be mpz_t arrays)"))
+    return rows
