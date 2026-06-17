@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<!--
+  MR.JEFFREY — conversational verified-coding web product (v23 / Part T).
+  Single self-contained file (HTML+CSS+JS). Apple-dark aesthetic. Works standalone (built-in mock)
+  and calls the FastAPI backend (server.py) when one is reachable.
+
+  ★ HONESTY NOTES baked into the source ★
+  • Marketing copy (abstract advertising like "압도적인…") is tagged `// marketing copy` and is NEVER
+    mixed with HARAN's real measured results (PROVEN / REFUTED / measured ms).
+  • API key is LEVEL 1: typed every time, kept only in a JS variable for the single request, sent over
+    the wire to the user's own backend, and never written to localStorage / cookies / logs.
+  • The screen's look & feel is a USER-CONFIRMATION subject — automated tests check structure, not visuals.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MR.JEFFREY</title>
+<style>
+  :root{
+    --normal:#5b9dff; --extended:#7c4dff;   /* mode accent hues */
+    --radius:22px; --radius-sm:14px; --radius-lg:30px;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,Roboto,sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    /* default palette = NORMAL (BLACK) until a mode class is applied */
+    --bg:#0a0a0c; --panel:#141418; --panel-2:#1c1c22; --line:#2a2a32;
+    --txt:#f5f5f7; --txt-dim:#a1a1aa; --txt-faint:#6b6b75; --accent:var(--normal);
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  }
+  /* ★ U8: BLACK (normal/default) ↔ WHITE (extended), with gradient backgrounds + smooth cross-fade ★
+     readability is non-negotiable: black theme = light text, white theme = dark text. */
+  body.mode-normal{   /* BLACK — default, 'fast' */
+    --bg:#0a0a0c; --panel:#141418; --panel-2:#1c1c22; --line:#2a2a32;
+    --txt:#f5f5f7; --txt-dim:#a1a1aa; --txt-faint:#6b6b75; --accent:var(--normal);
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+  }
+  body.mode-extended{ /* WHITE — 'powerful' (dark text for contrast) */
+    --bg:#ffffff; --panel:#f5f6f9; --panel-2:#eceef3; --line:#d9dce3;
+    --txt:#0c0c0f; --txt-dim:#55555f; --txt-faint:#8a8a94; --accent:var(--extended);
+    --ok:#059669; --warn:#b45309; --bad:#dc2626;
+  }
+  /* smooth full-theme morph on mode switch (no flicker) — vars tween, gradient layers cross-fade */
+  body, .card, .chat, .msgs, .bubble, .code, .composer, .composer input, .composer textarea,
+  .mode-pill, .lang-toggle, .lang-toggle button, .modetag, .hero .mode-tagline, .chip, .qchip,
+  .asks, .asks-head, .asks-body{
+    transition: background-color .5s ease, color .45s ease, border-color .5s ease;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:transparent;color:var(--txt);font-family:var(--font);
+    -webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh}
+  /* two fixed gradient layers cross-fade on mode switch (black↔white gradient transition) */
+  .bg{position:fixed;inset:0;z-index:-2;pointer-events:none;transition:opacity .5s ease}
+  .bg-dark{background:linear-gradient(180deg,#000000 0%,#15151b 60%,#0a0a0c 100%);opacity:1}
+  .bg-light{background:linear-gradient(180deg,#ffffff 0%,#eef0f5 60%,#e7e9ef 100%);opacity:0}
+  body.mode-extended .bg-dark{opacity:0}
+  body.mode-extended .bg-light{opacity:1}
+  /* subtle accent glow on top of the gradient */
+  .backdrop{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;transition:opacity .6s ease;
+    background:radial-gradient(58% 46% at 50% -4%,
+      color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%)}
+  .wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px}
+  /* header */
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px}
+  .logo{font-size:22px;font-weight:700;letter-spacing:.5px}
+  .logo .dot{color:var(--accent);transition:color .4s ease}
+  .header-right{display:flex;gap:10px;align-items:center}
+  .clear-btn{background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--txt-dim);
+    font-family:var(--font);font-size:12.5px;font-weight:600;padding:7px 14px;cursor:pointer;
+    transition:border-color .25s ease,color .25s ease}
+  .clear-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .lang-toggle{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:3px}
+  .lang-toggle button{background:none;border:none;color:var(--txt-dim);font-family:var(--font);
+    font-size:13px;font-weight:600;padding:6px 14px;border-radius:999px;cursor:pointer;
+    transition:all .25s ease}
+  .lang-toggle button.on{background:var(--accent);color:#fff}
+  /* hero */
+  .hero{text-align:center;padding:30px 0 44px}
+  .hero h1{font-size:34px;font-weight:700;line-height:1.3;letter-spacing:-.5px;
+    max-width:760px;margin:0 auto 18px}
+  .hero p.sub{font-size:18px;color:var(--txt-dim);max-width:600px;margin:0 auto}
+  .hero .mode-tagline{margin-top:18px;font-size:14px;font-weight:600;color:var(--accent);
+    letter-spacing:.2px;transition:color .45s ease}
+  .hero .compare{margin-top:10px;font-size:13px;color:var(--txt-faint)}
+  /* mode selector (T2) — click to switch; colors + lift transition */
+  .mode-select{display:flex;gap:12px;justify-content:center;margin-bottom:30px;flex-wrap:wrap}
+  .mode-pill{flex:0 1 210px;text-align:left;cursor:pointer;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;
+    transition:border-color .35s ease,box-shadow .35s ease,background .35s ease,transform .2s ease}
+  .mode-pill:hover{transform:translateY(-1px)}
+  .mode-pill .name{font-weight:700;font-size:16px;margin-bottom:3px;transition:color .35s ease}
+  .mode-pill .desc{font-size:12.5px;color:var(--txt-faint)}
+  .mode-pill.on{border-color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 12%, var(--panel));
+    box-shadow:0 0 0 1px var(--accent),0 10px 34px -16px var(--accent)}
+  .mode-pill.on .name{color:var(--accent)}
+  /* generic rounded panels */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px}
+  /* conversational UI (T4/T5) */
+  .chat{padding:0;overflow:hidden}
+  .msgs{min-height:0;max-height:440px;overflow-y:auto;padding:22px}
+  .msgs:empty{padding:0}   /* no conversation yet → collapse (no wasted space above the input) */
+  .msg{margin-bottom:18px;display:flex;flex-direction:column;gap:6px}
+  .msg .who{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:var(--txt-faint);text-transform:uppercase}
+  .bubble{padding:14px 16px;max-width:88%;font-size:14.5px;border-radius:18px}
+  .msg.user{align-items:flex-end}
+  .msg.user .bubble{background:var(--accent);color:#fff;border-radius:18px 18px 4px 18px;transition:background .35s ease}
+  .msg.assistant .bubble{background:var(--panel-2);border:1px solid var(--line);border-radius:18px 18px 18px 4px}
+  .modetag{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;
+    color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);margin-bottom:8px;
+    transition:color .35s ease,background .35s ease}
+  .simtag{font-size:10.5px;color:var(--warn);font-family:var(--mono);margin-left:8px}
+  .step{font-size:12.5px;color:var(--txt-dim);font-family:var(--mono);padding:3px 0;display:flex;gap:8px}
+  .step .mk{flex:0 0 auto}
+  .step.bad .mk{color:var(--bad)} .step.good .mk{color:var(--ok)}
+  /* progress indicator (U5) — shows the REAL current pipeline stage */
+  .progress{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--txt-dim);
+    font-weight:600;padding:5px 0}
+  .spinner{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:spin .8s linear infinite;flex:0 0 auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* expected-questions collapsible panel (U7) */
+  .asks{margin-top:8px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden}
+  .asks-head{width:100%;text-align:left;background:var(--panel-2);border:none;color:var(--txt-dim);
+    font-family:var(--font);font-size:13px;font-weight:700;padding:11px 14px;cursor:pointer;
+    display:flex;align-items:center;gap:8px;transition:color .2s ease}
+  .asks-head:hover{color:var(--accent)}
+  .asks-head .arr{margin-left:auto;transition:transform .25s ease}
+  .asks-head.open .arr{transform:rotate(180deg)}
+  .asks-body{max-height:0;opacity:0;overflow:hidden;transition:max-height .3s ease,opacity .3s ease;padding:0 14px}
+  .asks-body.open{max-height:320px;opacity:1;padding:10px 14px 14px}
+  .asks-body .ask{display:block;font-size:13.5px;color:var(--txt-dim);padding:6px 0}
+  .asks-hint{font-size:12px;color:var(--txt-faint);margin:6px 0 10px}
+  .ask-proceed{background:transparent;border:1px solid var(--accent);color:var(--accent);
+    border-radius:999px;font-family:var(--font);font-size:12.5px;font-weight:700;padding:7px 16px;cursor:pointer}
+  .chatreply{font-size:14.5px;line-height:1.55;white-space:pre-wrap}
+  .composer{border-top:1px solid var(--line);padding:16px 18px;background:var(--panel-2)}
+  .composer input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:10px 12px;color:var(--txt);font-size:13px;margin-bottom:10px;
+    font-family:var(--font)}
+  .composer-row{display:flex;gap:10px}
+  .composer textarea{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);
+    padding:11px 13px;color:var(--txt);font-size:14.5px;resize:none;min-height:46px;font-family:var(--font)}
+  .composer button{flex:0 0 auto;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);
+    padding:0 24px;font-weight:700;font-size:14px;cursor:pointer;transition:opacity .2s,background .35s ease}
+  .composer button:disabled{opacity:.5;cursor:default}
+  /* quick-action follow-ups (T5 + U6: hidden by default, toggle to expand) */
+  .quick{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  .quick-toggle{align-self:flex-start;background:transparent;border:1px solid var(--line);
+    border-radius:999px;color:var(--txt-faint);font-family:var(--font);font-size:11px;font-weight:700;
+    letter-spacing:.6px;text-transform:uppercase;padding:6px 14px;cursor:pointer;
+    transition:border-color .25s ease,color .25s ease}
+  .quick-toggle:hover{border-color:var(--accent);color:var(--accent)}
+  .quick-toggle .arr{display:inline-block;margin-left:6px;transition:transform .25s ease}
+  .quick-toggle.open .arr{transform:rotate(180deg)}
+  .qchips{display:flex;flex-wrap:wrap;gap:8px;max-height:0;opacity:0;overflow:hidden;
+    transition:max-height .3s ease,opacity .3s ease}
+  .qchips.open{max-height:240px;opacity:1}
+  .qchip{background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--txt-dim);
+    font-family:var(--font);font-size:12.5px;font-weight:600;padding:7px 14px;cursor:pointer;
+    transition:border-color .25s ease,color .25s ease}
+  .qchip:hover{border-color:var(--accent);color:var(--accent)}
+  /* example chips (T3.3) — big coding prompts; click to populate the input */
+  .chips-label{text-align:center;font-size:12px;font-weight:700;letter-spacing:1.2px;
+    text-transform:uppercase;color:var(--txt-faint);margin:8px 0 14px}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:22px}
+  .chips .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+    color:var(--txt-dim);font-family:var(--font);font-size:13.5px;font-weight:600;padding:11px 20px;
+    cursor:pointer;transition:border-color .25s ease,color .25s ease,transform .2s ease}
+  .chips .chip:hover{border-color:var(--accent);color:var(--txt);transform:translateY(-1px)}
+  .code{font-family:var(--mono);font-size:13.5px;background:var(--panel-2);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:12px 14px;display:block;white-space:pre-wrap;
+    color:var(--txt);line-height:1.55}
+  .tbd{color:var(--warn);font-size:12px;font-family:var(--mono)}
+  /* footer note */
+  .note{margin-top:34px;font-size:12.5px;color:var(--txt-faint);text-align:center;line-height:1.7}
+  .note code{font-family:var(--mono);color:var(--txt-dim)}
+  /* T10 autonomous polish: accessibility, click-to-copy, responsive, reduced-motion */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+  .code{cursor:pointer}
+  .code:hover{border-color:var(--accent)}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(18px);
+    background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:10px 18px;
+    border-radius:999px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;z-index:50;
+    transition:opacity .25s ease,transform .25s ease}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (max-width:640px){
+    .wrap{padding:18px 14px 60px}
+    .hero h1{font-size:25px}
+    .mode-select{flex-direction:column}
+    .mode-pill{flex:1 1 auto}
+    .composer-row{flex-direction:column}
+    .composer button{padding:13px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important; animation:none !important}
+  }
+</style>
+</head>
+<body>
+  <div class="bg bg-dark"></div>
+  <div class="bg bg-light"></div>
+  <div class="backdrop"></div>
+  <div class="wrap">
+    <header>
+      <div class="logo">MR<span class="dot">.</span>JEFFREY</div>
+      <div class="header-right">
+        <button class="clear-btn" id="clearBtn" data-i18n="clear" aria-label="new chat / 새 대화">새 대화</button>
+        <div class="lang-toggle" id="langToggle" role="group" aria-label="language / 언어">
+          <button data-lang="ko" class="on" aria-label="한국어">한국어</button>
+          <button data-lang="en" aria-label="English">EN</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="hero">
+      <!-- marketing copy (abstract advertising; NOT a measured claim — see I18N) -->
+      <h1 data-i18n="hero">Claude가 코드를 짜고, 수학적으로 속도와 코드 품질을 끌어올리는 특수 제작 모델이 작동합니다.</h1>
+      <p class="sub" data-i18n="sub">현존하는 모든 AI 대비 압도적인 속도와 정확성.</p>
+      <!-- mode-dependent tagline (T4): shifts subtly with the mode + theme. marketing copy. -->
+      <p class="mode-tagline" id="modeTagline">가장 빠르게 — 즉각 생성</p>
+      <!-- comparison line (T3.2): marketing copy, UNMEASURED → number is a [TBD] placeholder, hidden until measured -->
+      <p class="compare" id="compareLine" data-i18n="compare"
+         style="display:none">Codex와 Claude는 평균적으로 이보다 [TBD: 측정필요]% 느린 코드를 생성합니다.</p>
+    </section>
+
+    <div class="mode-select" id="modeSelect">
+      <div class="mode-pill" data-mode="normal">
+        <div class="name" data-i18n="mode_normal_name">일반</div>
+        <div class="desc" data-i18n="mode_normal_desc">빠른 속도 · 흔한 경우 · 절대 틀리지 않음</div>
+      </div>
+      <div class="mode-pill" data-mode="extended">
+        <div class="name" data-i18n="mode_extended_name">확장</div>
+        <div class="desc" data-i18n="mode_extended_desc">더 깊이 · 더 많이 해결 · 동일하게 정확</div>
+      </div>
+    </div>
+
+    <div class="chips-label" data-i18n="chips_label">예시 — 클릭해서 시작</div>
+    <div class="chips" id="exampleChips">
+      <button class="chip" data-i18n="ex1">실시간 채팅 백엔드 전체</button>
+      <button class="chip" data-i18n="ex2">JWT 인증 REST API 서버</button>
+      <button class="chip" data-i18n="ex3">결제 처리 상태머신</button>
+      <button class="chip" data-i18n="ex4">동시성 안전한 작업 큐</button>
+    </div>
+
+    <section class="card chat">
+      <div class="msgs" id="msgs"></div>
+      <div class="composer">
+        <input id="keyInput" type="password" autocomplete="off" data-i18n-ph="key_ph"
+               aria-label="Claude API key — entered each time, stored nowhere"
+               placeholder="Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)">
+        <div class="composer-row">
+          <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" aria-label="instruction / 지시"
+                    placeholder="상상하는 모든 걸 시작해보세요"></textarea>
+          <button id="sendBtn" data-i18n="send" aria-label="run / 실행">실행</button>
+        </div>
+        <!-- quick-action follow-ups (T5.3): appear after the first result; each is a follow-up instruction -->
+        <div class="quick" id="quickActions" style="display:none">
+          <button class="quick-toggle" id="quickToggle" aria-expanded="false" aria-label="quick actions / 빠른 지시">
+            <span data-i18n="quick_label">빠른 지시</span><span class="arr">▾</span>
+          </button>
+          <div class="qchips" id="qchips">
+            <button class="qchip" data-i18n="qa_faster">더 빠르게</button>
+            <button class="qchip" data-i18n="qa_bug">버그 고쳐</button>
+            <button class="qchip" data-i18n="qa_test">테스트 추가</button>
+            <button class="qchip" data-i18n="qa_edge">엣지 케이스</button>
+            <button class="qchip" data-i18n="qa_refactor">리팩토링</button>
+            <button class="qchip" data-i18n="qa_comment">주석 추가</button>
+            <button class="qchip" data-i18n="qa_simpler">더 간단하게</button>
+            <button class="qchip" data-i18n="qa_explain">설명해줘</button>
+            <button class="qchip" data-i18n="qa_safer">더 안전하게</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+// ── i18n (T1): Korean / English, switched live ──────────────────────────────────────────────
+const I18N = {
+  ko: {
+    // marketing copy — abstract advertising, NEVER mixed with measured results (PROVEN/ms).
+    hero: "Claude가 코드를 짜고, 수학적으로 속도와 코드 품질을 끌어올리는 특수 제작 모델이 작동합니다.",
+    sub: "현존하는 모든 AI 대비 압도적인 속도와 정확성.",
+    compare: "Codex와 Claude는 평균적으로 이보다 [TBD: 측정필요]% 느린 코드를 생성합니다.",
+    chips_label: "예시 — 클릭해서 시작",
+    ex1: "실시간 채팅 백엔드 전체",
+    ex2: "JWT 인증 REST API 서버",
+    ex3: "결제 처리 상태머신",
+    ex4: "동시성 안전한 작업 큐",
+    scope_note: "이 요청은 큰 프로그램입니다. MR.JEFFREY는 작은~중간 코드를 *명세 대비* 검증·최적화합니다 (Rice: 무에서 전체 생성은 불가). 핵심 로직과 명세(ensures)를 주시면 증명합니다.",
+    placeholder: "대화형 인터페이스가 여기에 들어갑니다.",
+    mode_normal_name: "일반",
+    mode_normal_desc: "빠른 속도 · 흔한 경우 · 절대 틀리지 않음",
+    mode_extended_name: "확장",
+    mode_extended_desc: "더 깊이 · 더 많이 해결 · 동일하게 정확",
+    send: "실행",
+    clear: "새 대화",
+    key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
+    req_ph: "상상하는 모든 걸 시작해보세요",
+    copied: "복사됨",
+    quick_label: "빠른 지시",
+    qa_faster: "더 빠르게",
+    qa_bug: "버그 고쳐",
+    qa_test: "테스트 추가",
+    qa_edge: "엣지 케이스",
+    qa_refactor: "리팩토링",
+    qa_comment: "주석 추가",
+    qa_simpler: "더 간단하게",
+    qa_explain: "설명해줘",
+    qa_safer: "더 안전하게",
+    you: "당신",
+    tagline_normal: "가장 빠르게 — 즉각 생성",
+    tagline_extended: "가장 강력하게 — 깊은 검증과 최적화",
+    asst_normal: "일반 모드 · 빠른 경로",
+    asst_extended: "확장 모드 · 깊은 검증",
+    m_fast: "즉각 생성 (속도 우선)",
+    verifying: "검증 중…",
+    stage_classify: "분류중..",
+    stage_generate: "Claude 호출중..",
+    stage_verify: "검증중..",
+    stage_fix: "반례 수정중..",
+    stage_optimize: "최적화중..",
+    stage_thinking: "생각중..",
+    asks_label: "예상 질문",
+    asks_hint: "답을 입력창에 적어 진행하거나, 그대로 진행하세요.",
+    proceed_anyway: "그대로 진행 →",
+    m_verified: "검증됨 (명세 대비)",
+    m_proven: "PROVEN ∀ (무한 ∀ 증명)",
+    m_optimized: "수학적 최적화",
+    m_unresolved_shallow: "미해결(얕음) — 확장 모드에서 더 깊이",
+    m_more_in_extended: "확장 모드에서 더 깊은 증명/최적화를 봅니다",
+  },
+  en: {
+    // marketing copy — abstract advertising, NEVER mixed with measured results (PROVEN/ms).
+    hero: "Claude writes the code; a purpose-built model mathematically raises its speed and quality.",
+    sub: "Overwhelming speed and accuracy versus every AI in existence.",
+    compare: "Codex and Claude generate code on average [TBD: measure] % slower than this.",
+    chips_label: "Examples — click to start",
+    ex1: "A full real-time chat backend",
+    ex2: "JWT-authenticated REST API server",
+    ex3: "Payment processing state machine",
+    ex4: "Concurrency-safe job queue",
+    scope_note: "This is a large program. MR.JEFFREY verifies & optimizes small-to-medium code *against a spec* (Rice: full generation from nothing is impossible). Give the core logic + a spec (ensures) and it proves it.",
+    placeholder: "The conversational interface goes here.",
+    mode_normal_name: "Normal",
+    mode_normal_desc: "Fast · common case · never wrong",
+    mode_extended_name: "Extended",
+    mode_extended_desc: "Deeper · solves more · equally correct",
+    send: "Run",
+    clear: "New chat",
+    key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
+    req_ph: "Start everything you imagine",
+    copied: "Copied",
+    quick_label: "Quick",
+    qa_faster: "Make it faster",
+    qa_bug: "Fix the bug",
+    qa_test: "Add tests",
+    qa_edge: "Edge cases",
+    qa_refactor: "Refactor",
+    qa_comment: "Add comments",
+    qa_simpler: "Simpler",
+    qa_explain: "Explain it",
+    qa_safer: "Safer",
+    you: "You",
+    tagline_normal: "The fastest — instant generation",
+    tagline_extended: "The most powerful — deep verification & optimization",
+    asst_normal: "Normal mode · fast path",
+    asst_extended: "Extended mode · deep verification",
+    m_fast: "instant generation (speed first)",
+    verifying: "verifying…",
+    stage_classify: "Classifying..",
+    stage_generate: "Calling Claude..",
+    stage_verify: "Verifying..",
+    stage_fix: "Fixing from counterexample..",
+    stage_optimize: "Optimizing..",
+    stage_thinking: "Thinking..",
+    asks_label: "Expected questions",
+    asks_hint: "Type an answer to proceed, or proceed anyway.",
+    proceed_anyway: "Proceed anyway →",
+    m_verified: "verified (against the spec)",
+    m_proven: "PROVEN ∀ (unbounded ∀ proof)",
+    m_optimized: "Mathematical optimization",
+    m_unresolved_shallow: "unresolved (shallow) — go deeper in Extended mode",
+    m_more_in_extended: "Extended mode shows a deeper proof / optimization",
+  },
+};
+let LANG = "ko";
+function setLang(lang){
+  if(!I18N[lang]) return;
+  LANG = lang;
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const k = el.getAttribute("data-i18n");
+    if(I18N[lang][k] !== undefined) el.textContent = I18N[lang][k];
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el=>{
+    const k = el.getAttribute("data-i18n-ph");
+    if(I18N[lang][k] !== undefined) el.placeholder = I18N[lang][k];
+  });
+  document.querySelectorAll("[data-i18n-empty]").forEach(el=>{
+    const k = el.getAttribute("data-i18n-empty");
+    if(I18N[lang][k] !== undefined) el.setAttribute("data-empty", I18N[lang][k]);
+  });
+  document.querySelectorAll("#langToggle button").forEach(b=>{
+    b.classList.toggle("on", b.getAttribute("data-lang")===lang);
+  });
+  try{ localStorage.setItem("haran_lang", lang); }catch(e){}   // persist LANGUAGE only (never the key)
+  refreshDynamic();
+}
+// mode-dependent text (T4): hero tagline shifts with the mode (alongside the color/theme transition)
+function refreshDynamic(){
+  const tl = document.getElementById("modeTagline");
+  if(tl) tl.textContent = (typeof MODE!=="undefined" && MODE==="extended")
+    ? T("tagline_extended") : T("tagline_normal");
+}
+document.getElementById("langToggle").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(b) setLang(b.getAttribute("data-lang"));
+});
+
+// ── two modes (T2): normal / extended — contrasting accent + click transition ───────────────
+let MODE = "normal";
+function setMode(mode){
+  if(mode !== "normal" && mode !== "extended") return;
+  MODE = mode;
+  document.body.classList.toggle("mode-normal", mode === "normal");
+  document.body.classList.toggle("mode-extended", mode === "extended");
+  document.querySelectorAll(".mode-pill").forEach(p=>{
+    p.classList.toggle("on", p.getAttribute("data-mode") === mode);
+  });
+}
+document.getElementById("modeSelect").addEventListener("click", e=>{
+  const p = e.target.closest(".mode-pill"); if(p){ setMode(p.getAttribute("data-mode")); refreshDynamic(); }
+});
+
+// ── i18n helper + escaping ──────────────────────────────────────────────────────────────────
+function T(k){ return (I18N[LANG] && I18N[LANG][k] !== undefined) ? I18N[LANG][k] : k; }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// ── client-side SIMULATION of the agentic pipeline (standalone demo) ─────────────────────────
+// ★ This is a SIM for the offline demo: it mirrors agentic.py's mock (deterministic). The REAL
+//   write→verify→fix and the REAL proof tiers run server-side (server.py / HARAN). When a key +
+//   reachable backend exist (T6/T7) runAgentic() calls the real API instead. A SIM result is ALWAYS
+//   labeled (simtag) — never presented as a live/real proof. ★
+// quick-action follow-ups → distinct SIM responses (each is a real round server-side; here labeled SIM)
+const QA_FOLLOWUPS = [
+  {re:/더 빠르게|faster|speed/i, tier:"PROVEN", closed:"(닫힌형태 / closed form)", speedup:"O(1)",
+   trace:[{label:"fold 최적화 / optimize", ok:true, detail:"구조적 루프 → 닫힌형태 (O(1))"}]},
+  {re:/버그|고쳐|fix|bug/i, tier:"PROVEN", closed:null, speedup:"none",
+   trace:[{label:"검증 / verify", ok:false, detail:"반례 / counterexample"},
+          {label:"수정→재검증 / fix→reverify", ok:true, detail:"PROVEN ∀"}]},
+  {re:/테스트|test/i, tier:"PROVEN", closed:null, speedup:"none",
+   trace:[{label:"속성 추가 / add properties", ok:true, detail:"메타모픽 속성 통과 / properties hold"}]},
+  {re:/엣지|경계|edge|boundary/i, tier:"PROVEN-BOUNDED", closed:null, speedup:"none",
+   trace:[{label:"엣지 케이스 / edge cases", ok:true, detail:"n=0, 경계값 검증 / boundaries checked"}]},
+  {re:/리팩토링|refactor/i, tier:"PROVEN", closed:null, speedup:"none",
+   trace:[{label:"리팩토링 동치 / refactor equivalence", ok:true, detail:"명세 대비 동일 / equivalent"}]},
+];
+function mockAgentic(request, mode, history){
+  const _t0 = performance.now();
+  const r = (request || "").toLowerCase();
+  // ── follow-up round (T5): when there's prior context, a quick-action iterates on the last code ──
+  if(history && history.length){
+    const qa = QA_FOLLOWUPS.find(q=>q.re.test(r));
+    if(qa){
+      const last = history[history.length-1];
+      return {source:"mock-sim", followup:true, converged:true, status:"VERIFIED",
+              proof_tier:qa.tier, code:(last && last.code) || null, closed:qa.closed,
+              speedup:qa.speedup, trace:qa.trace, iters:qa.trace.length,
+              sim_ms: Math.max(0.1, performance.now() - _t0).toFixed(1)};
+    }
+  }
+  // ★ scope/intent-gap honesty (rule 5): big whole-program requests can't be generated from nothing
+  //   (Rice). HARAN verifies small~medium code AGAINST A SPEC. Say so — never fake-verify a backend. ★
+  if(/백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|결제|payment/i.test(r)){
+    return {source:"mock-sim", scope:true, converged:false, status:"SCOPE", proof_tier:"(scope)",
+            code:null, closed:null, speedup:"none", iters:0, trace:[],
+            sim_ms: Math.max(0.1, performance.now() - _t0).toFixed(1)};
+  }
+  let ex;
+  if(/홀수|odd/.test(r))
+    ex = {code:"fn odds(n: Nat) -> Nat\n  ensures result = n*n\n{ fold k in 1..n { 2*k - 1 } }",
+          closed:"n²", proven:true};
+  else if(/합|sum|더해|add|plus/.test(r))
+    ex = {code:"fn sum(n: Nat) -> Nat\n  ensures result = n*(n+1)/2\n{ fold k in 1..n { k } }",
+          closed:"n·(n+1)/2", proven:true};
+  else
+    ex = {code:"fn f(n: Nat) -> Nat\n  ensures result = n\n{ n }", closed:null, proven:false};
+  const trace = ex.proven
+    ? [{label:"작성 / write", ok:false, detail:"반례 counterexample: n=1 → 2 ≠ 1"},
+       {label:"수정→검증 / fix→verify", ok:true, detail:"PROVEN ∀"}]
+    : [{label:"작성→검증 / write→verify", ok:true, detail:"TESTED (fuzz, no counterexample)"}];
+  return {source:"mock-sim", converged:true, iters:trace.length, status:"VERIFIED",
+          proof_tier: ex.proven ? "PROVEN" : "TESTED", code:ex.code,
+          closed:ex.closed, speedup: ex.closed ? "O(1)" : "none", trace,
+          sim_ms: Math.max(0.1, performance.now() - _t0).toFixed(1)};
+}
+
+// runAgentic: real backend when key+endpoint available (wired in T6/T7); else labeled SIM.
+async function runAgentic(request, mode, key, history){
+  // T6/T7 will branch here to fetch the FastAPI backend when `key` is provided. For now: SIM.
+  return mockAgentic(request, mode, history);
+}
+
+// ── rendering (T4: messages DIFFER by mode) ─────────────────────────────────────────────────
+const msgsEl = document.getElementById("msgs");
+function addMsg(role, inner){
+  const m = document.createElement("div");
+  m.className = "msg " + role;
+  m.innerHTML = `<div class="who">${role==="user"?esc(T("you")):"MR.JEFFREY"}</div>`
+              + `<div class="bubble">${inner}</div>`;
+  msgsEl.appendChild(m);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+  return m;
+}
+function renderAssistant(res, mode){
+  const sim = res.source === "mock-sim" ? `<span class="simtag">SIM</span>` : "";
+  const tag = `<span class="modetag">${esc(mode==="extended"?T("asst_extended"):T("asst_normal"))}</span>${sim}`;
+  if(res.scope){
+    // honest scope/intent-gap response (same in both modes) — NOT a fake verification
+    return `${tag}<div class="step"><span class="mk">▢</span>${esc(T("scope_note"))}</div>`;
+  }
+  const code = `<div class="step"><span class="code">${esc(res.code)}</span></div>`;
+  if(mode === "normal"){
+    // NORMAL: SPEED framing — fast verdict, defers the deep proof/optimization (honest: not wrong, shallow).
+    // ms shown is the SIM's own elapsed time (labeled), NOT a product metric; real timing is server-side.
+    const verdict = res.converged
+      ? `✓ ${esc(T("m_verified"))}`
+      : `${esc(T("m_unresolved_shallow"))}`;
+    const ms = (res.sim_ms != null) ? ` <span class="simtag">~${res.sim_ms}ms (SIM)</span>` : "";
+    return `${tag}${code}`
+         + `<div class="step good"><span class="mk">⚡</span>${esc(T("m_fast"))}${ms}</div>`
+         + `<div class="step good"><span class="mk">✓</span>${verdict}</div>`
+         + `<div class="step">→ ${esc(T("m_more_in_extended"))}</div>`;
+  }
+  // EXTENDED: deep — full loop trace + proof tier + mathematical optimization
+  const steps = res.trace.map(s=>
+    `<div class="step ${s.ok?"good":"bad"}"><span class="mk">${s.ok?"✓":"✗"}</span>`
+    + `${esc(s.label)} — ${esc(s.detail)}</div>`).join("");
+  const tier = res.proof_tier === "PROVEN" ? T("m_proven") : (res.proof_tier + "");
+  let opt = "";
+  if(res.closed) opt = `<div class="step"><span class="mk">∑</span>${esc(T("m_optimized"))}: `
+                     + `${esc(res.closed)} · ${esc(res.speedup)} · <span class="tbd">×N [TBD: 측정필요]</span></div>`;
+  return `${tag}${code}${steps}`
+       + `<div class="step good"><span class="mk">✓</span>${esc(tier)}</div>${opt}`;
+}
+
+// ── SSE streaming (T7): consume the backend's live token→verify→fix→done stream ─────────────
+const BACKEND = location.protocol === "http:" || location.protocol === "https:";  // served by FastAPI?
+async function streamAgentic(request, mode, key, history, onEvent, force){
+  const resp = await fetch("/api/stream", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({prompt:request, mode, apiKey:key, history, force: !!force})});
+  if(!resp.ok || !resp.body) throw new Error("stream unavailable ("+resp.status+")");
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "", summary = null;
+  for(;;){
+    const {value, done} = await reader.read(); if(done) break;
+    buf += dec.decode(value, {stream:true});
+    let i;
+    while((i = buf.indexOf("\n\n")) >= 0){
+      const line = buf.slice(0, i).split("\n").find(l=>l.startsWith("data:"));
+      buf = buf.slice(i + 2);
+      if(line){ const ev = JSON.parse(line.slice(5).trim()); onEvent(ev); if(ev.type==="done") summary = ev.summary; }
+    }
+  }
+  return summary;
+}
+// expected-questions COLLAPSIBLE panel (U7): collapsed by default; answer in the box, or proceed anyway
+function renderAsks(container, asks, request){
+  const wrap = document.createElement("div"); wrap.className = "asks";
+  const head = document.createElement("button"); head.className = "asks-head"; head.setAttribute("aria-expanded", "false");
+  head.innerHTML = `<span class="mk">?</span>${esc(T("asks_label"))} (${(asks || []).length})<span class="arr">▾</span>`;
+  const body = document.createElement("div"); body.className = "asks-body";
+  const hint = document.createElement("div"); hint.className = "asks-hint"; hint.textContent = T("asks_hint");
+  body.appendChild(hint);
+  (asks || []).forEach(a=>{ const d = document.createElement("div"); d.className = "ask"; d.textContent = "• " + a; body.appendChild(d); });
+  const proceed = document.createElement("button"); proceed.className = "ask-proceed"; proceed.textContent = T("proceed_anyway");
+  proceed.addEventListener("click", ()=> onSend(request, {force: true}));   // ignore questions, proceed
+  body.appendChild(proceed);
+  head.addEventListener("click", ()=>{ const open = body.classList.toggle("open");
+    head.classList.toggle("open", open); head.setAttribute("aria-expanded", open ? "true" : "false");
+    msgsEl.scrollTop = msgsEl.scrollHeight; });
+  wrap.append(head, body); container.appendChild(wrap);
+}
+// progressive renderer: builds one assistant bubble up as events arrive, with a REAL stage indicator
+function streamRender(mode, request){
+  const m = addMsg("assistant", "");
+  const bubble = m.querySelector(".bubble");
+  const tagEl = document.createElement("div");
+  tagEl.innerHTML = `<span class="modetag">${esc(mode==="extended"?T("asst_extended"):T("asst_normal"))}</span>`
+                  + `<span class="simtag" data-tag>···</span>`;
+  const prog = document.createElement("div"); prog.className = "progress"; prog.style.display = "none";
+  prog.innerHTML = `<span class="spinner"></span><span class="pl"></span>`;
+  const codeEl = document.createElement("div"); codeEl.className = "step"; codeEl.style.display = "none";
+  const codeSpan = document.createElement("span"); codeSpan.className = "code"; codeEl.appendChild(codeSpan);
+  const steps = document.createElement("div");
+  bubble.append(tagEl, prog, codeEl, steps);
+  let code = "";
+  const setStage = (s)=>{ prog.style.display = "flex"; prog.querySelector(".pl").textContent = T("stage_"+s);
+    msgsEl.scrollTop = msgsEl.scrollHeight; };
+  const stop = ()=>{ prog.style.display = "none"; };
+  const step = (mk, text, cls)=>{ const d=document.createElement("div"); d.className="step "+(cls||"");
+    d.innerHTML=`<span class="mk">${mk}</span>${esc(text)}`; steps.appendChild(d);
+    msgsEl.scrollTop = msgsEl.scrollHeight; };
+  return ev=>{
+    if(ev.type==="stage"){ setStage(ev.stage); }                          // 분류중/Claude 호출중/검증중/…
+    else if(ev.type==="token"){ code += ev.text; codeEl.style.display=""; codeSpan.textContent = code; }
+    else if(ev.type==="code_done"){ code = ev.code; codeEl.style.display=""; codeSpan.textContent = code; }
+    else if(ev.type==="verify"){
+      if(ev.status==="proven") step("✓", (ev.tier?ev.tier+" · ":"")+T("m_proven"), "good");
+      else if(ev.status==="refuted") step("✗", "반례 / counterexample: "+JSON.stringify(ev.counterexample||{}), "bad");
+      else step("•", T("m_unresolved_shallow"));
+    }
+    else if(ev.type==="fix") step("↻", "fix "+(ev.attempt||""));
+    else if(ev.type==="fixed"){ code = ev.code; codeSpan.textContent = code; }
+    else if(ev.type==="optimized") step("∑", T("m_optimized")+": "+ev.closed_form+" · "+ev.speedup+" · ×N [TBD: 측정필요]");
+    else if(ev.type==="chat"){ stop(); tagEl.querySelector(".modetag").style.display="none";
+      const d=document.createElement("div"); d.className="chatreply"; d.textContent = ev.reply; bubble.insertBefore(d, prog); }
+    else if(ev.type==="ask"){ stop(); renderAsks(steps, ev.asks, request); }
+    else if(ev.type==="note"){ stop(); step("▢", T("scope_note")); }
+    else if(ev.type==="error"){ stop(); step("⚠", ev.message, "bad"); }
+    else if(ev.type==="done"){ stop(); const tg=tagEl.querySelector("[data-tag]");
+      if(tg) tg.textContent = (ev.summary && ev.summary.source==="claude-live") ? "LIVE" : "SIM"; }
+  };
+}
+
+// ── client-side routing for the standalone (no-backend) mock, mirroring intent.py ───────────────
+const _SCOPE_RE = /백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|결제|payment/i;
+const _VAGUE_ASKS = {
+  "정렬": ["오름차순/내림차순? (ascending or descending?)", "원소 타입? (int / float / string?)"],
+  "sort": ["ascending or descending?", "element type? (int / float / string?)"],
+  "탐색": ["정렬된 입력? (sorted input?)", "원소 타입? (type?)"],
+  "search": ["sorted input?", "element type?"],
+};
+function _mockChatReply(t){
+  if(/안녕|하이|헬로|반가|hi|hello|hey/.test(t)) return "안녕하세요! 무엇을 만들어 드릴까요? (Hi! What should we build & verify?)";
+  if(/고마|감사|thanks|thank you/.test(t)) return "천만에요! 코드가 필요하면 언제든요. (Anytime — say the word for code.)";
+  if(/누구|who are you|뭐야|what is|haran|mr\.?jeffrey/.test(t)) return "저는 MR.JEFFREY예요 — Claude가 코드를 짜면 제가 수학적으로 검증·최적화합니다. (I'm MR.JEFFREY: Claude writes, I verify & optimize.)";
+  return "음 — 코드로 만들어 드릴까요? 예: '정렬 함수' (Want me to turn that into verified code?)";
+}
+function _localRoute(text, force){
+  const t = text.toLowerCase().trim();
+  const has = (arr)=>arr.some(k=>t.includes(k));
+  const verbs = ["만들","구현","짜","작성","코딩","고쳐","리팩토","implement","write a","write me","create","build","fix","refactor","optimize","generate"];
+  const nouns = ["함수","코드","알고리즘","정렬","클래스","메서드","버그","function","code","algorithm","sort","class","method","bug","array","parser"];
+  const chat = ["안녕","하이","헬로","반가","고마","감사","ㅋㅋ","ㅎㅎ","누구","뭐해","심심","hi","hello","hey","thanks","bye","who are you"];
+  const q = t.endsWith("?") || has(["뭐야","무엇","어떻게","왜","설명","what is","what's","how","why","explain"]);
+  if(has(chat) && !has(nouns)) return {kind:"chat", reply:_mockChatReply(t)};
+  if(_SCOPE_RE.test(t)) return {kind:"note"};
+  if(q && !has(verbs)) return {kind:"chat", reply:_mockChatReply(t)};
+  const constrained = has(["오름차순","내림차순","ascending","descending","정수","integer","int","float","문자열","string","1부터","1 to","0부터"]);
+  if(!force && !constrained) for(const k of Object.keys(_VAGUE_ASKS)) if(t.includes(k)) return {kind:"ask", asks:_VAGUE_ASKS[k]};
+  return {kind:"code"};
+}
+
+// ── send handler + the continuous feedback loop (T5: the heart) ──────────────────────────────
+const reqEl = document.getElementById("reqInput");
+const keyEl = document.getElementById("keyInput");
+const sendBtn = document.getElementById("sendBtn");
+const quickEl = document.getElementById("quickActions");
+// conversation HISTORY accumulates across rounds → threaded as context every round (server uses it, T8)
+const HISTORY = [];
+function _accumulate(request, summary){
+  if(summary && !summary.scope && summary.code) HISTORY.push({request, code:summary.code});
+  quickEl.style.display = "flex";
+}
+async function _mockTurn(request, key, force){   // standalone / fallback — routes like the server
+  const r = _localRoute(request, force);
+  if(r.kind === "chat"){
+    const m = addMsg("assistant", ""); const b = m.querySelector(".bubble");
+    b.innerHTML = `<span class="simtag">SIM</span>`;
+    const d = document.createElement("div"); d.className = "chatreply"; d.textContent = r.reply; b.appendChild(d);
+    quickEl.style.display = "flex"; return;                               // chat → NO verification label
+  }
+  if(r.kind === "ask"){
+    const m = addMsg("assistant", `<span class="simtag">SIM</span>`);
+    renderAsks(m.querySelector(".bubble"), r.asks, request); quickEl.style.display = "flex"; return;
+  }
+  if(r.kind === "note"){
+    addMsg("assistant", `<span class="simtag">SIM</span><div class="step"><span class="mk">▢</span>${esc(T("scope_note"))}</div>`);
+    quickEl.style.display = "flex"; return;
+  }
+  const res = await runAgentic(request, MODE, key, HISTORY.slice());       // code → mock pipeline result
+  addMsg("assistant", renderAssistant(res, MODE));
+  _accumulate(request, res);
+}
+async function onSend(override, opts){
+  const request = (override != null ? override : reqEl.value).trim();
+  if(!request) return;
+  const force = !!(opts && opts.force);                  // U7: 'proceed anyway' (skip clarity gate)
+  // LEVEL-1 key: read it ONLY for this request; never persisted (no localStorage/cookie write anywhere).
+  const key = keyEl.value.trim() || null;
+  addMsg("user", esc(request));
+  reqEl.value = "";
+  sendBtn.disabled = true; sendBtn.textContent = "…";   // T10: loading state
+  try{
+    if(BACKEND){
+      const onEvent = streamRender(MODE, request);        // real SSE: live stages→token→verify→done
+      const summary = await streamAgentic(request, MODE, key, HISTORY.slice(), onEvent, force);
+      _accumulate(request, summary);
+    } else {
+      await _mockTurn(request, key, force);               // standalone (file://): labeled SIM mock
+    }
+  }catch(err){
+    try{ await _mockTurn(request, key, force); }          // backend unreachable → mock fallback
+    catch(e2){ addMsg("assistant", `<span class="simtag">error</span> ${esc(String(e2))}`); }
+  }finally{
+    sendBtn.disabled = false; sendBtn.textContent = T("send");
+  }
+}
+// T10: click any code block to copy it (with a toast); accessible status via aria-live
+const toastEl = document.getElementById("toast");
+function showToast(msg){ toastEl.textContent = msg; toastEl.classList.add("show");
+  setTimeout(()=>toastEl.classList.remove("show"), 1400); }
+msgsEl.addEventListener("click", e=>{
+  const c = e.target.closest(".code");
+  if(c && c.textContent.trim() && navigator.clipboard){
+    navigator.clipboard.writeText(c.textContent).then(()=>showToast(T("copied"))).catch(()=>{});
+  }
+});
+sendBtn.addEventListener("click", ()=>onSend());
+reqEl.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); onSend(); } });
+// U10 autonomous: auto-grow the textarea as you type longer requests
+reqEl.addEventListener("input", ()=>{ reqEl.style.height = "auto";
+  reqEl.style.height = Math.min(reqEl.scrollHeight, 160) + "px"; });
+// U10 autonomous: clear / new chat (resets the conversation + accumulated history)
+document.getElementById("clearBtn").addEventListener("click", ()=>{
+  msgsEl.innerHTML = ""; HISTORY.length = 0; quickEl.style.display = "none";
+  reqEl.value = ""; reqEl.style.height = "auto"; reqEl.focus();
+});
+// example chips → populate the input (T3.3)
+document.getElementById("exampleChips").addEventListener("click", e=>{
+  const c = e.target.closest(".chip"); if(c){ reqEl.value = c.textContent.trim(); reqEl.focus(); }
+});
+// quick-action chips → send as a follow-up instruction (T5.3)
+quickEl.addEventListener("click", e=>{
+  const q = e.target.closest(".qchip"); if(q) onSend(q.textContent.trim());
+});
+// U6: chips hidden by default; toggle to expand/collapse (less clutter)
+const quickToggle = document.getElementById("quickToggle");
+const qchips = document.getElementById("qchips");
+quickToggle.addEventListener("click", ()=>{
+  const open = qchips.classList.toggle("open");
+  quickToggle.classList.toggle("open", open);
+  quickToggle.setAttribute("aria-expanded", open ? "true" : "false");
+});
+
+// ── init (runs after all definitions) ───────────────────────────────────────────────────────
+(function init(){
+  let lang = "ko";
+  try{ const s = localStorage.getItem("haran_lang"); if(s==="ko"||s==="en") lang = s; }catch(e){}
+  setMode("normal");     // default mode
+  setLang(lang);         // applies i18n + refreshDynamic (mode tagline)
+})();
+</script>
+</body>
+</html>
