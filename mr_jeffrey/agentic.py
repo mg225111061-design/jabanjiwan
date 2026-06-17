@@ -19,8 +19,8 @@ HONESTY (v22 bar):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Callable, List, Optional
 
 import ai_loop
 import claude_agent as CA
@@ -52,4 +52,62 @@ def write_verify(request: str, api_key: Optional[str] = None, *,
         request=request, code=gen.text, source=gen.source, live=gen.live,
         status=v.status, ok=v.ok, counterexample=v.counterexample,
         feedback=ai_loop.minimal_feedback(v) if not v.ok else "verified against spec (명세 대비)",
+    )
+
+
+# ---------------------------------------------------------------------------------------------------
+# S3 — write → verify → FIX (the heart). Claude writes; HARAN rejects with a concrete counterexample;
+# that counterexample is fed back into the next prompt; repeat until PROVEN or the budget runs out.
+# The loop mechanics (fix-prompt + minimal counterexample) are reused from v7 (ai_loop.write_verify_fix);
+# v22 wires Claude (level-1 key) as the model and adds honest provenance.
+#
+# ★ The loop and HARAN's counterexamples are REAL. In mock mode the *model text* is a scripted
+#   SIMULATION (wrong→fixed) — never a fake 'live'. A weak model just loops more; HARAN never
+#   rubber-stamps, so there is NO false convergence. ★
+# ---------------------------------------------------------------------------------------------------
+
+@dataclass
+class WVFResult:
+    converged: bool
+    iters: int
+    source: str               # "mock-sim" | "claude-live"
+    final_code: str
+    final_status: str
+    trace: List[ai_loop.LoopStep] = field(default_factory=list)
+
+
+def _claude_model_fn(api_key: Optional[str], model: str,
+                     mock_sequence: Optional[List[str]]) -> Callable[[str], str]:
+    """A `prompt -> code` callable backed by Claude. Live: each call is a real Claude turn (so the fix
+    prompt, which carries the counterexample, actually drives a fix). Mock: a deterministic scripted
+    sequence (wrong → fixed) advancing one step per call — an honest SIMULATION of the model's turns."""
+    state = {"i": 0}
+    seq = mock_sequence or [CA._MOCK_HARAN]
+
+    def model_fn(prompt: str) -> str:
+        if api_key:
+            return CA.claude_generate(prompt, api_key, model=model).text
+        out = seq[min(state["i"], len(seq) - 1)]
+        state["i"] += 1
+        return out
+
+    return model_fn
+
+
+def write_verify_fix(request: str, api_key: Optional[str] = None, *,
+                     model: str = CA.DEFAULT_MODEL, mock_sequence: Optional[List[str]] = None,
+                     max_iters: int = 3, verbose: bool = False) -> WVFResult:
+    """S3: drive Claude→HARAN→fix until the code is PROVEN against its spec (or budget exhausted).
+
+    Returns convergence + the full trace (each iteration's code, verdict, and the counterexample that
+    was fed back). With no key, `mock_sequence` scripts the model's turns (e.g. [WRONG, GOOD]); the
+    loop and counterexamples are real regardless."""
+    fn = _claude_model_fn(api_key, model, mock_sequence)
+    loop = ai_loop.write_verify_fix(request, fn, fn, max_iters=max_iters, verbose=verbose)
+    last = loop.trace[-1] if loop.trace else None
+    return WVFResult(
+        converged=loop.converged, iters=loop.iters,
+        source="claude-live" if api_key else "mock-sim",
+        final_code=last.code if last else "", final_status=last.verdict.status if last else "NONE",
+        trace=loop.trace,
     )
