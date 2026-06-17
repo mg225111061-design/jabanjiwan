@@ -24,6 +24,8 @@ from typing import Callable, List, Optional
 
 import ai_loop
 import claude_agent as CA
+import closure_classifier as CC
+from haran_parser import parse
 
 
 @dataclass
@@ -110,4 +112,42 @@ def write_verify_fix(request: str, api_key: Optional[str] = None, *,
         source="claude-live" if api_key else "mock-sim",
         final_code=last.code if last else "", final_status=last.verdict.status if last else "NONE",
         trace=loop.trace,
+    )
+
+
+# ---------------------------------------------------------------------------------------------------
+# S4 — fold optimization. Once code is PROVEN, HARAN tries to collapse it to a closed form (Faulhaber /
+# C-finite / hypergeometric → O(1)). This is the "mathematically speed it up" half of the product.
+# Reuses closure_classifier.classify_fn (kind ∈ CLOSED/UNKNOWN/NO_STRUCTURE/ABSENT).
+#
+# HONESTY: only PROVEN code is optimized (never optimize something unverified). `speedup` here is an
+# **asymptotic class backed by a closed-form existence proof** (structural), NOT a wall-clock number —
+# concrete ×N is measured separately (S7) or left as [TBD: measured]. Code with no exploitable
+# structure is honestly reported as NOT collapsed (constant-factor only / Ω(N) floor), never faked.
+# ---------------------------------------------------------------------------------------------------
+
+@dataclass
+class OptimizeResult:
+    optimized: bool           # True iff a closed form was found (kind == CLOSED)
+    kind: str                 # CLOSED | UNKNOWN | NO_STRUCTURE | ABSENT | PARSE_ERROR | NONE
+    method: str               # e.g. "faulhaber"
+    closed_form: str          # the closed form, or "—"
+    speedup: str              # asymptotic class (proven structural), e.g. "O(1)", or "none"
+    proof: str                # short justification from the classifier
+
+
+def optimize(code: str) -> OptimizeResult:
+    """S4: classify a (proven) HARAN function and, if it has closed-form structure, return the closed
+    form + asymptotic class. No structure → honestly NOT optimized (no fabricated speedup)."""
+    prog = parse(code)
+    if prog.errors:
+        return OptimizeResult(False, "PARSE_ERROR", "-", "—", "none", str(prog.errors[0]))
+    fns = prog.fns()
+    if not fns:
+        return OptimizeResult(False, "NONE", "-", "—", "none", "no function found")
+    v = CC.classify_fn(fns[0])
+    return OptimizeResult(
+        optimized=(v.kind == "CLOSED"), kind=v.kind, method=v.method,
+        closed_form=v.closed_form, speedup=v.speedup if v.kind == "CLOSED" else "none",
+        proof=str(v.proof),
     )
