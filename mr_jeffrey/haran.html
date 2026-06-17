@@ -110,6 +110,14 @@
   .composer button{flex:0 0 auto;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);
     padding:0 24px;font-weight:700;font-size:14px;cursor:pointer;transition:opacity .2s,background .35s ease}
   .composer button:disabled{opacity:.5;cursor:default}
+  /* quick-action follow-ups (T5) */
+  .quick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+  .quick-label{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--txt-faint);
+    text-transform:uppercase;margin-right:4px}
+  .qchip{background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--txt-dim);
+    font-family:var(--font);font-size:12.5px;font-weight:600;padding:7px 14px;cursor:pointer;
+    transition:border-color .25s ease,color .25s ease}
+  .qchip:hover{border-color:var(--accent);color:var(--accent)}
   /* example chips (T3.3) — big coding prompts; click to populate the input */
   .chips-label{text-align:center;font-size:12px;font-weight:700;letter-spacing:1.2px;
     text-transform:uppercase;color:var(--txt-faint);margin:8px 0 14px}
@@ -178,6 +186,15 @@
           <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" placeholder="무엇을 만들까요?"></textarea>
           <button id="sendBtn" data-i18n="send">실행</button>
         </div>
+        <!-- quick-action follow-ups (T5.3): appear after the first result; each is a follow-up instruction -->
+        <div class="quick" id="quickActions" style="display:none">
+          <span class="quick-label" data-i18n="quick_label">빠른 지시</span>
+          <button class="qchip" data-i18n="qa_faster">더 빠르게</button>
+          <button class="qchip" data-i18n="qa_bug">버그 고쳐</button>
+          <button class="qchip" data-i18n="qa_test">테스트 추가</button>
+          <button class="qchip" data-i18n="qa_edge">엣지 케이스</button>
+          <button class="qchip" data-i18n="qa_refactor">리팩토링</button>
+        </div>
       </div>
     </section>
 
@@ -212,6 +229,12 @@ const I18N = {
     chat_empty: "대화를 시작해 보세요. 예: “1부터 n까지의 합”",
     key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
     req_ph: "무엇을 만들까요?",
+    quick_label: "빠른 지시",
+    qa_faster: "더 빠르게",
+    qa_bug: "버그 고쳐",
+    qa_test: "테스트 추가",
+    qa_edge: "엣지 케이스",
+    qa_refactor: "리팩토링",
     you: "당신",
     tagline_normal: "가장 빠르게 — 즉각 생성",
     tagline_extended: "가장 강력하게 — 깊은 검증과 최적화",
@@ -246,6 +269,12 @@ const I18N = {
     chat_empty: "Start a conversation. e.g. “sum from 1 to n”",
     key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
     req_ph: "What should we build?",
+    quick_label: "Quick",
+    qa_faster: "Make it faster",
+    qa_bug: "Fix the bug",
+    qa_test: "Add tests",
+    qa_edge: "Edge cases",
+    qa_refactor: "Refactor",
     you: "You",
     tagline_normal: "The fastest — instant generation",
     tagline_extended: "The most powerful — deep verification & optimization",
@@ -318,9 +347,34 @@ function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;"
 //   write→verify→fix and the REAL proof tiers run server-side (server.py / HARAN). When a key +
 //   reachable backend exist (T6/T7) runAgentic() calls the real API instead. A SIM result is ALWAYS
 //   labeled (simtag) — never presented as a live/real proof. ★
-function mockAgentic(request, mode){
+// quick-action follow-ups → distinct SIM responses (each is a real round server-side; here labeled SIM)
+const QA_FOLLOWUPS = [
+  {re:/더 빠르게|faster|speed/i, tier:"PROVEN", closed:"(닫힌형태 / closed form)", speedup:"O(1)",
+   trace:[{label:"fold 최적화 / optimize", ok:true, detail:"구조적 루프 → 닫힌형태 (O(1))"}]},
+  {re:/버그|고쳐|fix|bug/i, tier:"PROVEN", closed:null, speedup:"none",
+   trace:[{label:"검증 / verify", ok:false, detail:"반례 / counterexample"},
+          {label:"수정→재검증 / fix→reverify", ok:true, detail:"PROVEN ∀"}]},
+  {re:/테스트|test/i, tier:"PROVEN", closed:null, speedup:"none",
+   trace:[{label:"속성 추가 / add properties", ok:true, detail:"메타모픽 속성 통과 / properties hold"}]},
+  {re:/엣지|경계|edge|boundary/i, tier:"PROVEN-BOUNDED", closed:null, speedup:"none",
+   trace:[{label:"엣지 케이스 / edge cases", ok:true, detail:"n=0, 경계값 검증 / boundaries checked"}]},
+  {re:/리팩토링|refactor/i, tier:"PROVEN", closed:null, speedup:"none",
+   trace:[{label:"리팩토링 동치 / refactor equivalence", ok:true, detail:"명세 대비 동일 / equivalent"}]},
+];
+function mockAgentic(request, mode, history){
   const _t0 = performance.now();
   const r = (request || "").toLowerCase();
+  // ── follow-up round (T5): when there's prior context, a quick-action iterates on the last code ──
+  if(history && history.length){
+    const qa = QA_FOLLOWUPS.find(q=>q.re.test(r));
+    if(qa){
+      const last = history[history.length-1];
+      return {source:"mock-sim", followup:true, converged:true, status:"VERIFIED",
+              proof_tier:qa.tier, code:(last && last.code) || null, closed:qa.closed,
+              speedup:qa.speedup, trace:qa.trace, iters:qa.trace.length,
+              sim_ms: Math.max(0.1, performance.now() - _t0).toFixed(1)};
+    }
+  }
   // ★ scope/intent-gap honesty (rule 5): big whole-program requests can't be generated from nothing
   //   (Rice). HARAN verifies small~medium code AGAINST A SPEC. Say so — never fake-verify a backend. ★
   if(/백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|결제|payment/i.test(r)
@@ -351,7 +405,7 @@ function mockAgentic(request, mode){
 // runAgentic: real backend when key+endpoint available (wired in T6/T7); else labeled SIM.
 async function runAgentic(request, mode, key, history){
   // T6/T7 will branch here to fetch the FastAPI backend when `key` is provided. For now: SIM.
-  return mockAgentic(request, mode);
+  return mockAgentic(request, mode, history);
 }
 
 // ── rendering (T4: messages DIFFER by mode) ─────────────────────────────────────────────────
@@ -397,12 +451,15 @@ function renderAssistant(res, mode){
        + `<div class="step good"><span class="mk">✓</span>${esc(tier)}</div>${opt}`;
 }
 
-// ── send handler ────────────────────────────────────────────────────────────────────────────
+// ── send handler + the continuous feedback loop (T5: the heart) ──────────────────────────────
 const reqEl = document.getElementById("reqInput");
 const keyEl = document.getElementById("keyInput");
 const sendBtn = document.getElementById("sendBtn");
-async function onSend(){
-  const request = reqEl.value.trim();
+const quickEl = document.getElementById("quickActions");
+// conversation HISTORY accumulates across rounds → threaded as context every round (server uses it, T8)
+const HISTORY = [];
+async function onSend(override){
+  const request = (override != null ? override : reqEl.value).trim();
   if(!request) return;
   // LEVEL-1 key: read it ONLY for this request; never persisted (no localStorage/cookie write anywhere).
   const key = keyEl.value.trim() || null;
@@ -410,19 +467,25 @@ async function onSend(){
   reqEl.value = "";
   sendBtn.disabled = true;
   try{
-    const res = await runAgentic(request, MODE, key, []);
+    const res = await runAgentic(request, MODE, key, HISTORY.slice());   // pass accumulated context
     addMsg("assistant", renderAssistant(res, MODE));
+    if(!res.scope && res.code) HISTORY.push({request, code:res.code});   // accumulate the round
+    quickEl.style.display = "flex";                                      // enable quick follow-ups
   }catch(err){
     addMsg("assistant", `<span class="simtag">error</span> ${esc(String(err))}`);
   }finally{
     sendBtn.disabled = false;
   }
 }
-sendBtn.addEventListener("click", onSend);
+sendBtn.addEventListener("click", ()=>onSend());
 reqEl.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); onSend(); } });
 // example chips → populate the input (T3.3)
 document.getElementById("exampleChips").addEventListener("click", e=>{
   const c = e.target.closest(".chip"); if(c){ reqEl.value = c.textContent.trim(); reqEl.focus(); }
+});
+// quick-action chips → send as a follow-up instruction (T5.3)
+quickEl.addEventListener("click", e=>{
+  const q = e.target.closest(".qchip"); if(q) onSend(q.textContent.trim());
 });
 
 // ── init (runs after all definitions) ───────────────────────────────────────────────────────
