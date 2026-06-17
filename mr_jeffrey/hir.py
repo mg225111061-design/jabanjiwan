@@ -87,16 +87,10 @@ def detect_language(filename: Optional[str] = None, source: str = "") -> str:
 
 
 def ai_confirm_language(source: str) -> Optional[str]:
-    """Optional AI confirmation — only if an API key exists; else None (heuristic stands). Honest:
-    never invents a backend; just a second opinion when the key is present."""
-    import os
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return None
-    try:  # pragma: no cover - network/dev only
-        import ai_loop
-        return ai_loop.classify_language(source)  # if the adapter exposes it
-    except Exception:
-        return None
+    """Optional AI confirmation. DISABLED under the level-1 key policy (no env keys ever) — returns
+    None so the keyword heuristic stands. Any AI augmentation would take an explicit per-call key
+    (level-1), never an environment variable."""
+    return None
 
 
 # ----------------------------------------------------------------- B1.2 Python → HIR

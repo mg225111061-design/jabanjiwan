@@ -136,16 +136,10 @@ def extract_properties(hfn: hir.HFunction, sample=None) -> List[Property]:
 
 
 def ai_extract_properties(hfn: hir.HFunction) -> List[str]:
-    """Optional AI augmentation — only with an API key; else [] (heuristics stand). Honest: never
-    fabricates a relation; just asks Claude for more candidate relations when the key is present."""
-    import os
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return []
-    try:  # pragma: no cover - network/dev only
-        import ai_loop
-        return ai_loop.extract_relations(hfn.source)
-    except Exception:
-        return []
+    """Optional AI augmentation. DISABLED under the level-1 key policy (no env keys ever) — returns []
+    so the heuristics stand. Any AI augmentation would take an explicit per-call key (level-1), never
+    an environment variable."""
+    return []
 
 
 # ----------------------------------------------------------------- B2.3 independence assessment
