@@ -19,8 +19,9 @@ HONESTY (v22 bar):
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import ai_loop
 import claude_agent as CA
@@ -243,3 +244,120 @@ def verify_typeA(code: str) -> TypeAResult:
     spec = fusion.extract_spec(code) or ""
     return TypeAResult(tier=v.tier, proven_forall=(v.tier == "PROVEN"), spec=spec,
                        detail=str(v.detail), counterexample=v.counterexample)
+
+
+# ---------------------------------------------------------------------------------------------------
+# S7 — the integrated entry point: agentic_code(request, mode, key, history?) + honest measurement.
+# Pipeline: [history+request] → write→verify→FIX (mode budget) → on PROVEN: fold-optimize (S4) +
+# Type A proof tier (S6). Everything below is wired from S1–S6. Wall-clock is REAL (perf_counter).
+#
+# HONESTY: ms is a genuine measurement (mock = no network; live = includes API latency, labeled). We
+# do NOT fabricate cross-model "×N vs other AI" numbers — there is no such measurement here → that
+# stays [TBD: measured]. Marketing copy ("압도적인…") lives in the UI as `// marketing copy`, never mixed
+# with these measured values.
+# ---------------------------------------------------------------------------------------------------
+
+HistoryTurn = Tuple[str, str]   # (prior_request, prior_code)
+
+
+@dataclass
+class AgenticResult:
+    request: str
+    mode: str
+    source: str               # "mock-sim" | "claude-live"
+    converged: bool
+    iters: int
+    status: str               # VERIFIED | UNRESOLVED-shallow | UNRESOLVED | FAILED | NONE
+    final_code: str
+    proof_tier: str           # PROVEN | TESTED | ... | "(not proven)"
+    optimization: Optional[OptimizeResult]
+    ms: float                 # measured wall-clock of the whole pipeline
+    history_len: int          # how many prior turns were threaded into context
+    trace: List[ai_loop.LoopStep] = field(default_factory=list)
+
+
+def _with_history(request: str, history: Optional[List[HistoryTurn]]) -> str:
+    """Thread prior turns into the task so follow-up instructions accumulate (used live; recorded for
+    mock). Conversation context = earlier (request → code) turns, then the new request."""
+    if not history:
+        return request
+    ctx = "\n".join(f"# earlier: {req}\n{code}" for req, code in history)
+    return f"{ctx}\n# now: {request}"
+
+
+def agentic_code(request: str, mode: str = "normal", api_key: Optional[str] = None, *,
+                 history: Optional[List[HistoryTurn]] = None,
+                 model: str = CA.DEFAULT_MODEL,
+                 mock_sequence: Optional[List[str]] = None) -> AgenticResult:
+    """THE entry point. Claude writes code for `request` (+ conversation `history`); HARAN verifies &
+    fixes under `mode`'s budget; if PROVEN, HARAN optimizes (closed form) and reports the Type A proof
+    tier. Returns everything + a real measured wall-clock. `api_key` is level-1 (per-call, unstored)."""
+    t0 = time.perf_counter()
+    task = _with_history(request, history)
+    budget = MODE_BUDGET.get(mode, 2)
+    wvf = write_verify_fix(task, api_key, model=model, mock_sequence=mock_sequence, max_iters=budget)
+
+    if wvf.converged:
+        status = "VERIFIED"
+    elif mode == "normal":
+        status = "UNRESOLVED-shallow"
+    else:
+        status = "UNRESOLVED" if wvf.final_status != "FAILED" else "FAILED"
+
+    # only optimize / prove PROVEN code (S4/S6 discipline)
+    if wvf.converged:
+        opt = optimize(wvf.final_code)
+        tier = verify_typeA(wvf.final_code).tier
+    else:
+        opt, tier = None, "(not proven)"
+
+    ms = (time.perf_counter() - t0) * 1000
+    return AgenticResult(
+        request=request, mode=mode, source=wvf.source, converged=wvf.converged, iters=wvf.iters,
+        status=status, final_code=wvf.final_code, proof_tier=tier, optimization=opt, ms=ms,
+        history_len=len(history or []), trace=wvf.trace,
+    )
+
+
+@dataclass
+class AgenticMeasurement:
+    mode: str
+    n: int
+    solved: int               # converged (VERIFIED) count
+    proven_forall: int        # of solved, how many reach Type A PROVEN (∀)
+    optimized: int            # of solved, how many collapse to a closed form
+    total_ms: float           # measured wall-clock (mock = no network)
+    wrong: int                # must be 0 (HARAN never false-VERIFIES)
+
+
+def measure_agentic(corpus: Optional[List[Tuple[str, List[str]]]] = None,
+                    mode: str = "normal") -> AgenticMeasurement:
+    """Honest measurement of the agentic pipeline over a corpus of (request, mock_sequence) tasks.
+    Reports REAL wall-clock + actual solved/proven/optimized counts (mock, no network). No fabricated
+    cross-model speedups (those are [TBD: measured])."""
+    corpus = corpus or _DEFAULT_CORPUS
+    solved = proven = optimized = wrong = 0
+    t0 = time.perf_counter()
+    for request, seq in corpus:
+        r = agentic_code(request, mode, mock_sequence=seq)
+        if r.converged:
+            solved += 1
+            if r.proof_tier == "PROVEN":
+                proven += 1
+            if r.optimization and r.optimization.optimized:
+                optimized += 1
+        if r.converged and r.status != "VERIFIED":
+            wrong += 1
+    total_ms = (time.perf_counter() - t0) * 1000
+    return AgenticMeasurement(mode, len(corpus), solved, proven, optimized, total_ms, wrong)
+
+
+_GOOD = "fn triangular(n: Nat) -> Nat\n  ensures result = n*(n+1)/2\n{ fold k in 1..n { k } }"
+_WRONG = "fn triangular(n: Nat) -> Nat\n  ensures result = n*(n+1)/2\n{ fold k in 1..n { k+1 } }"
+_SQ = "fn sq(n: Nat) -> Nat\n  ensures result = n*n\n{ fold k in 1..n { 2*k - 1 } }"
+_DEFAULT_CORPUS: List[Tuple[str, List[str]]] = [
+    ("sum 1..n", [_GOOD]),                 # easy: 1 iter
+    ("sum 1..n (fix me)", [_WRONG, _GOOD]),  # needs the counterexample fed back: 2 iters
+    ("sum of odds = n^2", [_SQ]),          # different closed form, PROVEN ∀
+    ("hard: 3 tries", [_WRONG, _WRONG, _GOOD]),  # normal misses (budget 2), extended solves
+]
