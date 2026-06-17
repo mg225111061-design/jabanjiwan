@@ -153,12 +153,13 @@ def stream_events(payload: Optional[dict]) -> Iterator[str]:
                                                          "verified": False, "source": "local"}})
             return
 
-        clarity = IN.assess_clarity(prompt, api_key)
-        if not clarity.clear:                                              # vague → expected questions
-            yield sse_event({"type": "ask", "asks": clarity.asks})
-            yield sse_event({"type": "done", "summary": {"kind": "ask", "asks": clarity.asks,
-                                                         "verified": False, "source": clarity.source}})
-            return
+        if not p.get("force"):                                            # U7: 'proceed anyway' skips it
+            clarity = IN.assess_clarity(prompt, api_key)
+            if not clarity.clear:                                          # vague → expected questions
+                yield sse_event({"type": "ask", "asks": clarity.asks})
+                yield sse_event({"type": "done", "summary": {"kind": "ask", "asks": clarity.asks,
+                                                             "verified": False, "source": clarity.source}})
+                return
 
         # coding pipeline — emit each real stage as it runs
         for ev in AG.agentic_stream(prompt, mode, api_key, history=history):
@@ -212,7 +213,7 @@ def handle_route(payload: Optional[dict]) -> dict:
     if not text:
         return {"error": True, "message": "empty prompt"}
     try:
-        rr = IN.route(text, mode, api_key, history)
+        rr = IN.route(text, mode, api_key, history, force=bool(p.get("force")))
         out = {"kind": rr.kind, "intent": rr.intent, "source": rr.source, "verified": rr.verified}
         if rr.kind == "code":
             out["result"] = to_result_dict(rr.code_result)

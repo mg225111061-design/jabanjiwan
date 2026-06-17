@@ -247,16 +247,19 @@ class RouteResult:
     asks: List[str] = field(default_factory=list)  # (kind="ask")
 
 
-def route(text: str, mode: str = "normal", api_key: Optional[str] = None, history=None) -> RouteResult:
+def route(text: str, mode: str = "normal", api_key: Optional[str] = None, history=None,
+          force: bool = False) -> RouteResult:
     """U4: classify the message and route it. CODING+clear → run the verified pipeline; CODING+vague →
-    return expected questions; CHAT/QUESTION → a plain (unverified) reply. The `kind` says which."""
+    return expected questions (unless `force` → proceed anyway); CHAT/QUESTION → a plain (unverified)
+    reply. The `kind` says which."""
     it = classify_intent(text, api_key)
     if it.intent == "CODING":
         if is_scope(text):                                   # whole-program ask → honest scope reply
             return RouteResult("chat", "CODING", text, "local", verified=False, reply=SCOPE_REPLY)
-        clarity = assess_clarity(text, api_key)
-        if not clarity.clear:                                # missing details → ask first (suggestions)
-            return RouteResult("ask", "CODING", text, clarity.source, verified=False, asks=clarity.asks)
+        if not force:                                        # U7: 'proceed anyway' skips the clarity gate
+            clarity = assess_clarity(text, api_key)
+            if not clarity.clear:                            # missing details → ask first (suggestions)
+                return RouteResult("ask", "CODING", text, clarity.source, verified=False, asks=clarity.asks)
         res = AG.agentic_code(text, mode, api_key, history=history or [])   # the verified pipeline
         return RouteResult("code", "CODING", text, res.source, verified=res.converged, code_result=res)
     # CHAT / QUESTION → plain answer, never verified

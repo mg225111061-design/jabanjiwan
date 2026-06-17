@@ -106,8 +106,20 @@
   .spinner{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
     border-radius:50%;animation:spin .8s linear infinite;flex:0 0 auto}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .asks{margin-top:6px}
-  .asks .ask{font-size:13.5px;color:var(--txt-dim);padding:6px 0;border-top:1px solid var(--line)}
+  /* expected-questions collapsible panel (U7) */
+  .asks{margin-top:8px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden}
+  .asks-head{width:100%;text-align:left;background:var(--panel-2);border:none;color:var(--txt-dim);
+    font-family:var(--font);font-size:13px;font-weight:700;padding:11px 14px;cursor:pointer;
+    display:flex;align-items:center;gap:8px;transition:color .2s ease}
+  .asks-head:hover{color:var(--accent)}
+  .asks-head .arr{margin-left:auto;transition:transform .25s ease}
+  .asks-head.open .arr{transform:rotate(180deg)}
+  .asks-body{max-height:0;opacity:0;overflow:hidden;transition:max-height .3s ease,opacity .3s ease;padding:0 14px}
+  .asks-body.open{max-height:320px;opacity:1;padding:10px 14px 14px}
+  .asks-body .ask{display:block;font-size:13.5px;color:var(--txt-dim);padding:6px 0}
+  .asks-hint{font-size:12px;color:var(--txt-faint);margin:6px 0 10px}
+  .ask-proceed{background:transparent;border:1px solid var(--accent);color:var(--accent);
+    border-radius:999px;font-family:var(--font);font-size:12.5px;font-weight:700;padding:7px 16px;cursor:pointer}
   .chatreply{font-size:14.5px;line-height:1.55;white-space:pre-wrap}
   .composer{border-top:1px solid var(--line);padding:16px 18px;background:var(--panel-2)}
   .composer input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line);
@@ -296,6 +308,8 @@ const I18N = {
     stage_optimize: "최적화중..",
     stage_thinking: "생각중..",
     asks_label: "예상 질문",
+    asks_hint: "답을 입력창에 적어 진행하거나, 그대로 진행하세요.",
+    proceed_anyway: "그대로 진행 →",
     m_verified: "검증됨 (명세 대비)",
     m_proven: "PROVEN ∀ (무한 ∀ 증명)",
     m_optimized: "수학적 최적화",
@@ -346,6 +360,8 @@ const I18N = {
     stage_optimize: "Optimizing..",
     stage_thinking: "Thinking..",
     asks_label: "Expected questions",
+    asks_hint: "Type an answer to proceed, or proceed anyway.",
+    proceed_anyway: "Proceed anyway →",
     m_verified: "verified (against the spec)",
     m_proven: "PROVEN ∀ (unbounded ∀ proof)",
     m_optimized: "Mathematical optimization",
@@ -515,10 +531,10 @@ function renderAssistant(res, mode){
 
 // ── SSE streaming (T7): consume the backend's live token→verify→fix→done stream ─────────────
 const BACKEND = location.protocol === "http:" || location.protocol === "https:";  // served by FastAPI?
-async function streamAgentic(request, mode, key, history, onEvent){
+async function streamAgentic(request, mode, key, history, onEvent, force){
   const resp = await fetch("/api/stream", {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({prompt:request, mode, apiKey:key, history})});
+    body: JSON.stringify({prompt:request, mode, apiKey:key, history, force: !!force})});
   if(!resp.ok || !resp.body) throw new Error("stream unavailable ("+resp.status+")");
   const reader = resp.body.getReader(), dec = new TextDecoder();
   let buf = "", summary = null;
@@ -534,17 +550,25 @@ async function streamAgentic(request, mode, key, history, onEvent){
   }
   return summary;
 }
-// expected-questions block (U7 makes it collapsible; U5 lists them)
-function renderAsks(container, asks){
+// expected-questions COLLAPSIBLE panel (U7): collapsed by default; answer in the box, or proceed anyway
+function renderAsks(container, asks, request){
   const wrap = document.createElement("div"); wrap.className = "asks";
-  const lab = document.createElement("div"); lab.className = "step";
-  lab.innerHTML = `<span class="mk">?</span>${esc(T("asks_label"))}`;
-  wrap.appendChild(lab);
-  (asks || []).forEach(a=>{ const d=document.createElement("div"); d.className="ask"; d.textContent=a; wrap.appendChild(d); });
-  container.appendChild(wrap);
+  const head = document.createElement("button"); head.className = "asks-head"; head.setAttribute("aria-expanded", "false");
+  head.innerHTML = `<span class="mk">?</span>${esc(T("asks_label"))} (${(asks || []).length})<span class="arr">▾</span>`;
+  const body = document.createElement("div"); body.className = "asks-body";
+  const hint = document.createElement("div"); hint.className = "asks-hint"; hint.textContent = T("asks_hint");
+  body.appendChild(hint);
+  (asks || []).forEach(a=>{ const d = document.createElement("div"); d.className = "ask"; d.textContent = "• " + a; body.appendChild(d); });
+  const proceed = document.createElement("button"); proceed.className = "ask-proceed"; proceed.textContent = T("proceed_anyway");
+  proceed.addEventListener("click", ()=> onSend(request, {force: true}));   // ignore questions, proceed
+  body.appendChild(proceed);
+  head.addEventListener("click", ()=>{ const open = body.classList.toggle("open");
+    head.classList.toggle("open", open); head.setAttribute("aria-expanded", open ? "true" : "false");
+    msgsEl.scrollTop = msgsEl.scrollHeight; });
+  wrap.append(head, body); container.appendChild(wrap);
 }
 // progressive renderer: builds one assistant bubble up as events arrive, with a REAL stage indicator
-function streamRender(mode){
+function streamRender(mode, request){
   const m = addMsg("assistant", "");
   const bubble = m.querySelector(".bubble");
   const tagEl = document.createElement("div");
@@ -577,7 +601,7 @@ function streamRender(mode){
     else if(ev.type==="optimized") step("∑", T("m_optimized")+": "+ev.closed_form+" · "+ev.speedup+" · ×N [TBD: 측정필요]");
     else if(ev.type==="chat"){ stop(); tagEl.querySelector(".modetag").style.display="none";
       const d=document.createElement("div"); d.className="chatreply"; d.textContent = ev.reply; bubble.insertBefore(d, prog); }
-    else if(ev.type==="ask"){ stop(); renderAsks(steps, ev.asks); }
+    else if(ev.type==="ask"){ stop(); renderAsks(steps, ev.asks, request); }
     else if(ev.type==="note"){ stop(); step("▢", T("scope_note")); }
     else if(ev.type==="error"){ stop(); step("⚠", ev.message, "bad"); }
     else if(ev.type==="done"){ stop(); const tg=tagEl.querySelector("[data-tag]");
@@ -599,7 +623,7 @@ function _mockChatReply(t){
   if(/누구|who are you|뭐야|what is|haran|mr\.?jeffrey/.test(t)) return "저는 MR.JEFFREY예요 — Claude가 코드를 짜면 제가 수학적으로 검증·최적화합니다. (I'm MR.JEFFREY: Claude writes, I verify & optimize.)";
   return "음 — 코드로 만들어 드릴까요? 예: '정렬 함수' (Want me to turn that into verified code?)";
 }
-function _localRoute(text){
+function _localRoute(text, force){
   const t = text.toLowerCase().trim();
   const has = (arr)=>arr.some(k=>t.includes(k));
   const verbs = ["만들","구현","짜","작성","코딩","고쳐","리팩토","implement","write a","write me","create","build","fix","refactor","optimize","generate"];
@@ -610,7 +634,7 @@ function _localRoute(text){
   if(_SCOPE_RE.test(t)) return {kind:"note"};
   if(q && !has(verbs)) return {kind:"chat", reply:_mockChatReply(t)};
   const constrained = has(["오름차순","내림차순","ascending","descending","정수","integer","int","float","문자열","string","1부터","1 to","0부터"]);
-  if(!constrained) for(const k of Object.keys(_VAGUE_ASKS)) if(t.includes(k)) return {kind:"ask", asks:_VAGUE_ASKS[k]};
+  if(!force && !constrained) for(const k of Object.keys(_VAGUE_ASKS)) if(t.includes(k)) return {kind:"ask", asks:_VAGUE_ASKS[k]};
   return {kind:"code"};
 }
 
@@ -625,8 +649,8 @@ function _accumulate(request, summary){
   if(summary && !summary.scope && summary.code) HISTORY.push({request, code:summary.code});
   quickEl.style.display = "flex";
 }
-async function _mockTurn(request, key){   // standalone / fallback path (no backend) — routes like the server
-  const r = _localRoute(request);
+async function _mockTurn(request, key, force){   // standalone / fallback — routes like the server
+  const r = _localRoute(request, force);
   if(r.kind === "chat"){
     const m = addMsg("assistant", ""); const b = m.querySelector(".bubble");
     b.innerHTML = `<span class="simtag">SIM</span>`;
@@ -635,7 +659,7 @@ async function _mockTurn(request, key){   // standalone / fallback path (no back
   }
   if(r.kind === "ask"){
     const m = addMsg("assistant", `<span class="simtag">SIM</span>`);
-    renderAsks(m.querySelector(".bubble"), r.asks); quickEl.style.display = "flex"; return;
+    renderAsks(m.querySelector(".bubble"), r.asks, request); quickEl.style.display = "flex"; return;
   }
   if(r.kind === "note"){
     addMsg("assistant", `<span class="simtag">SIM</span><div class="step"><span class="mk">▢</span>${esc(T("scope_note"))}</div>`);
@@ -645,9 +669,10 @@ async function _mockTurn(request, key){   // standalone / fallback path (no back
   addMsg("assistant", renderAssistant(res, MODE));
   _accumulate(request, res);
 }
-async function onSend(override){
+async function onSend(override, opts){
   const request = (override != null ? override : reqEl.value).trim();
   if(!request) return;
+  const force = !!(opts && opts.force);                  // U7: 'proceed anyway' (skip clarity gate)
   // LEVEL-1 key: read it ONLY for this request; never persisted (no localStorage/cookie write anywhere).
   const key = keyEl.value.trim() || null;
   addMsg("user", esc(request));
@@ -655,14 +680,14 @@ async function onSend(override){
   sendBtn.disabled = true; sendBtn.textContent = "…";   // T10: loading state
   try{
     if(BACKEND){
-      const onEvent = streamRender(MODE);                 // real SSE: live token→verify→fix→done
-      const summary = await streamAgentic(request, MODE, key, HISTORY.slice(), onEvent);
+      const onEvent = streamRender(MODE, request);        // real SSE: live stages→token→verify→done
+      const summary = await streamAgentic(request, MODE, key, HISTORY.slice(), onEvent, force);
       _accumulate(request, summary);
     } else {
-      await _mockTurn(request, key);                      // standalone (file://): labeled SIM mock
+      await _mockTurn(request, key, force);               // standalone (file://): labeled SIM mock
     }
   }catch(err){
-    try{ await _mockTurn(request, key); }                 // backend unreachable → mock fallback
+    try{ await _mockTurn(request, key, force); }          // backend unreachable → mock fallback
     catch(e2){ addMsg("assistant", `<span class="simtag">error</span> ${esc(String(e2))}`); }
   }finally{
     sendBtn.disabled = false; sendBtn.textContent = T("send");
