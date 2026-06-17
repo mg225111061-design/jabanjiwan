@@ -89,6 +89,12 @@ def _signature(fdef) -> dict:
 def c_to_hir(source: str) -> hir.HModule:
     if not _OK:
         raise RuntimeError("pycparser not available")
+    # Full C preprocessor is out of scope (see module docstring). pycparser cannot parse `#...`
+    # directives and throws an opaque ParseError; detect them up front and raise a *catchable*
+    # SyntaxError so the caller (hir.to_hir) reports an honest DEFER instead of crashing.
+    if any(ln.lstrip().startswith("#") for ln in source.splitlines()):
+        raise SyntaxError("C preprocessor directives are out of scope (DEFER): "
+                          "run the preprocessor first, or pass directive-free C")
     ast = c_parser.CParser().parse(source)
     src_lines = source.splitlines()
     fns: List[hir.HFunction] = []
