@@ -291,3 +291,65 @@ def error_audit() -> List[ErrRow]:
     rows.append(ErrRow("native trap (div-by-zero)", "CLEAN", True,
                        "run_native raises a labelled RuntimeError on a nonzero exit (W3)"))
     return rows
+
+
+# ===================================================================================================
+# W6 — reproducibility audit (dependencies + graceful degradation).
+# ===================================================================================================
+import importlib  # noqa: E402
+
+
+@dataclass
+class DepRow:
+    dep: str
+    kind: str          # REQUIRED | OPTIONAL
+    present: bool
+    degrade: str       # what happens when absent
+
+
+def _pymod(m):
+    try:
+        importlib.import_module(m)
+        return True
+    except Exception:
+        return False
+
+
+def dep_audit() -> List[DepRow]:
+    import shutil
+    return [
+        DepRow("python3 stdlib", "REQUIRED", True, "—"),
+        DepRow("C compiler (cc/gcc)", "REQUIRED", CG.cc_available() is not None,
+               "codegen unavailable (compile_fn returns 'no C compiler')"),
+        DepRow("GMP (libgmp+gmp.h)", "OPTIONAL", BN.gmp_available(),
+               "bignum path → BLOCKED message; i64 path still works"),
+        DepRow("llc / LLVM", "OPTIONAL", LL.llc_available() is not None,
+               "direct LLVM IR path degrades; C-lowering path still works"),
+        DepRow("numpy", "OPTIONAL", _pymod("numpy"), "v18 diffusion only; codegen unaffected"),
+        DepRow("scipy", "OPTIONAL", _pymod("scipy"), "v18 diffusion only; codegen unaffected"),
+        DepRow("pycparser", "OPTIONAL", _pymod("pycparser"), "C frontend/PDG degrade; Python path works"),
+        DepRow("javalang", "OPTIONAL", _pymod("javalang"), "Java frontend degrades"),
+        DepRow("Coq", "OPTIONAL", shutil.which("coqc") is not None, "unbounded ∀ → BLOCKED; Z3 bounded fallback"),
+    ]
+
+
+def degrade_check() -> dict:
+    """Simulate optional-tool ABSENCE and confirm a graceful BLOCKED result (no crash)."""
+    out = {}
+    # GMP absent → compile_bignum returns BLOCKED
+    orig = BN.gmp_available
+    try:
+        BN.gmp_available = lambda: False
+        r = BN.compile_bignum("int main(){return 0;}")
+        out["gmp_absent"] = (not r.ok) and "BLOCKED" in r.detail
+    finally:
+        BN.gmp_available = orig
+    # C compiler absent → compile_fn returns clean 'no C compiler' (simulate via _CC=None)
+    origcc = CG._CC
+    try:
+        CG._CC = None
+        c = CG.compile_fn(_fn("fn f(n: Int) -> Int { n+1 }"))
+        out["cc_absent"] = (not c.ok) and "no C compiler" in c.detail
+    finally:
+        CG._CC = origcc
+    return out
