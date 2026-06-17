@@ -300,3 +300,79 @@ def asan_check(src: str) -> AsanResult:
     bad = any(s in err for s in ("ERROR: AddressSanitizer", "LeakSanitizer", "detected memory leaks",
                                  "double-free", "heap-use-after-free"))
     return AsanResult(True, not bad, "ran", run.stdout.strip() + (" | " + err[:160] if bad else ""))
+
+
+# ----------------------------------------------------------------------------- v19 W1: Vec REDUCE kernel
+@dataclass
+class ReduceKernel:
+    fn: A.FnDecl
+    vecparam: A.Param
+    vty: A.TyName
+    binder: str
+    body: object
+    mode: str
+    size: object
+    elem: str
+
+
+def detect_reduce(fn: A.FnDecl) -> Optional[ReduceKernel]:
+    """`fold x in xs { e }` over a Vec parameter → a reduction kernel (the missing companion of map)."""
+    body = cc._block_return(fn.body) if fn.body else None
+    if not (isinstance(body, A.Fold) and isinstance(body.domain, A.Var)):
+        return None
+    vp = next((p for p in fn.params if p.name == body.domain.name), None)
+    if vp is None:
+        return None
+    vty = _unwrap(vp.ty)
+    if not (isinstance(vty, A.TyName) and vty.name == "Vec"):
+        return None
+    mode, size = _vec_size(vty)
+    inner = cc._block_return(body.body) if isinstance(body.body, A.Block) else body.body
+    return ReduceKernel(fn, vp, vty, body.binder, inner, mode, size, _elem_ctype(vty))
+
+
+def emit_reduce_c(rk: ReduceKernel) -> str:
+    elem, name = rk.elem, rk.fn.name
+    ctx = cg.Ctx()
+    bexpr = cg.lower(rk.body, ctx)
+    prelude = "\n    ".join(ctx.lines)
+    if rk.mode == "static":
+        N = rk.size
+        kernel = (f"static {elem} {name}(const {elem}* in) {{\n  {elem} acc = 0;\n"
+                  f"  for (long long i = 0; i < {N}; i++) {{\n    {elem} {rk.binder} = in[i];\n"
+                  f"    {prelude}\n    acc += {bexpr};\n  }}\n  return acc;\n}}")
+        main = (f"int main(int argc, char**argv) {{\n  {elem} in[{N}];\n"
+                f"  for (long long i=0;i<{N};i++) in[i] = {_atoX(elem)}(argv[1+i]);\n"
+                f"  printf(\"{_fmt(elem)}\\n\", {name}(in)); return 0;\n}}")
+    else:
+        sv = rk.size
+        kernel = (f"static {elem} {name}(const {elem}* in, long long {sv}) {{\n  {elem} acc = 0;\n"
+                  f"  for (long long i = 0; i < {sv}; i++) {{\n    {elem} {rk.binder} = in[i];\n"
+                  f"    {prelude}\n    acc += {bexpr};\n  }}\n  return acc;\n}}")
+        main = (f"int main(int argc, char**argv) {{\n  long long {sv} = atoll(argv[1]);\n"
+                f"  {elem}* in = malloc({sv}*sizeof({elem}));\n"
+                f"  for (long long i=0;i<{sv};i++) in[i] = {_atoX(elem)}(argv[2+i]);\n"
+                f"  printf(\"{_fmt(elem)}\\n\", {name}(in, {sv})); free(in); return 0;\n}}")
+    return f"#include <stdio.h>\n#include <stdlib.h>\n{kernel}\n{main}\n"
+
+
+def compile_reduce(fn: A.FnDecl, flags: Optional[List[str]] = None) -> Compiled:
+    if not _CC:
+        return Compiled(False, "", "", "", False, "no C compiler")
+    rk = detect_reduce(fn)
+    if rk is None:
+        return Compiled(False, "", "", "", False, "not a fold-over-Vec reduction kernel")
+    src = emit_reduce_c(rk)
+    d = tempfile.mkdtemp()
+    cpath, bpath = os.path.join(d, "r.c"), os.path.join(d, "r")
+    open(cpath, "w").write(src)
+    r = subprocess.run([_CC, "-O2", *(flags or []), cpath, "-o", bpath], capture_output=True, text=True)
+    if r.returncode != 0:
+        return Compiled(False, "", src, rk.mode, False, f"compile failed: {r.stderr[:200]}")
+    return Compiled(True, bpath, src, rk.mode, False, "compiled")
+
+
+def run_reduce(binary: str, vec: List[int], dynamic: bool = True) -> int:
+    args = ([str(len(vec))] if dynamic else []) + [str(x) for x in vec]
+    out = subprocess.run([binary, *args], capture_output=True, text=True, timeout=30).stdout.strip()
+    return int(out) if out else 0
