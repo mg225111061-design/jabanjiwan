@@ -118,3 +118,63 @@ def classify_intent(text: str, api_key: Optional[str] = None, *,
     method = "claude" if api_key else "mock-default"
     intent = "CODING" if is_coding else "CHAT"
     return IntentResult(intent, method, conf, source=gen.source)
+
+
+# ── U2: clarity assessment ──────────────────────────────────────────────────────────────────────
+# A bare "정렬 함수" is ambiguous (asc/desc? type?) — building it blind would be wrong. A request that
+# already states constraints proceeds immediately. Known-ambiguous topics get topic-specific questions
+# locally; otherwise (rare) Claude decides. The questions are SUGGESTIONS — the user may answer or ignore.
+_CONSTRAINT_KW = ["오름차순", "내림차순", "ascending", "descending", "정수", "integer", "int", "float",
+                  "문자열", "string", "리스트", "list", "1부터", "1 to", "0부터", "ensures", "명세",
+                  "반환", "returns", "given", "입력은", "input is"]
+_TOPIC_ASKS = {
+    "sort": ["오름차순/내림차순? (ascending or descending?)", "원소 타입? (int / float / string?)",
+             "안정 정렬이 필요한가요? (stable?)"],
+    "search": ["입력이 정렬돼 있나요? (sorted input?)", "원소 타입? (type?)",
+               "못 찾으면 어떻게? (not-found behavior?)"],
+    "parse": ["입력 형식은? (input format?)", "잘못된 입력 처리? (error handling?)"],
+}
+_TOPIC_KW = {
+    "sort": ["정렬", "sort", "소트"],
+    "search": ["탐색", "검색", "search", "find"],
+    "parse": ["파싱", "파서", "parse", "parser"],
+}
+
+
+@dataclass
+class ClarityResult:
+    clear: bool                       # True → proceed straight to agentic_code
+    asks: List[str] = field(default_factory=list)   # expected questions when vague (suggestions)
+    method: str = "keyword"           # "keyword" (local) | "claude" | "mock-default"
+    source: str = "local"
+
+
+def _detect_topic(t: str) -> Optional[str]:
+    for topic, kws in _TOPIC_KW.items():
+        if _has(t, kws):
+            return topic
+    return None
+
+
+_CLARITY_MOCK = '{"clear": true, "asks": []}'
+
+
+def assess_clarity(request: str, api_key: Optional[str] = None, *,
+                   mock_response: Optional[str] = None) -> ClarityResult:
+    """U2: is a coding request specific enough to build, or should we ask first? Local first (constraint
+    keywords → clear; known-ambiguous topic w/o constraints → topic questions); Claude only if unsure."""
+    t = (request or "").lower()
+    if _has(t, _CONSTRAINT_KW):                 # already states constraints → proceed
+        return ClarityResult(True, [], "keyword", "local")
+    topic = _detect_topic(t)
+    if topic:                                    # known-ambiguous topic, no constraints → ask (local)
+        return ClarityResult(False, _TOPIC_ASKS[topic], "keyword", "local")
+    # undecided locally → Claude (or conservative mock = proceed)
+    prompt = ('Is this coding request specific enough to implement, or are key details missing? Reply '
+              'ONLY JSON {"clear": bool, "asks": ["q1","q2"]} (asks = the questions to ask if unclear).\n'
+              f"Request: {request}")
+    gen = CA.claude_generate(prompt, api_key, mock_response=mock_response or _CLARITY_MOCK)
+    obj = _extract_json(gen.text)
+    clear = bool(obj.get("clear", True))
+    asks = [str(a) for a in obj.get("asks", [])] if isinstance(obj.get("asks", []), list) else []
+    return ClarityResult(clear, asks if not clear else [], "claude" if api_key else "mock-default", gen.source)
