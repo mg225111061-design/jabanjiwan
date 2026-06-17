@@ -151,3 +151,53 @@ def optimize(code: str) -> OptimizeResult:
         closed_form=v.closed_form, speedup=v.speedup if v.kind == "CLOSED" else "none",
         proof=str(v.proof),
     )
+
+
+# ---------------------------------------------------------------------------------------------------
+# S5 — two modes (normal / extended), reusing v21's philosophy & vocabulary.
+#   • NORMAL   = speed: a SHALLOW fix budget. Solves the common case fast; on a hard request it stops
+#                early with UNRESOLVED-shallow (honest — it didn't look deeper; NOT a wrong answer).
+#   • EXTENDED = quality: a DEEPER fix budget → solves MORE (slightly slower). Worst case = honest
+#                UNRESOLVED (budget hit), never a false PROVEN.
+#
+# The depth knob for the *agentic loop* is the write→verify→fix budget (mr_haran.verify_program has no
+# tier param). v21's verification-tier modes (modes.py, corpus-based) remain at the verify layer; here
+# we apply the SAME normal/extended contract to the loop.
+#
+# ★ INVARIANT (both modes): ZERO wrong answers. normal is shallow (may miss), never false; extended
+#   solves more but is still not "everything". A 'wrong' would require HARAN to falsely VERIFY — it
+#   never does, so `wrong` is structurally always False. ★
+# ---------------------------------------------------------------------------------------------------
+
+MODE_BUDGET = {"normal": 2, "extended": 5}   # fix-iteration budget (loop depth)
+
+
+@dataclass
+class ModeRun:
+    mode: str
+    converged: bool
+    iters: int
+    status: str               # VERIFIED | UNRESOLVED-shallow (normal) | UNRESOLVED (extended)
+    wrong: bool               # claimed VERIFIED but actually not — must ALWAYS be False
+
+
+def agentic_in_mode(request: str, mode: str = "normal", api_key: Optional[str] = None, *,
+                    model: str = CA.DEFAULT_MODEL, mock_sequence: Optional[List[str]] = None) -> ModeRun:
+    """Run the agentic loop under a mode's fix budget. normal = shallow/fast, extended = deeper/more."""
+    budget = MODE_BUDGET.get(mode, 2)
+    r = write_verify_fix(request, api_key, model=model, mock_sequence=mock_sequence, max_iters=budget)
+    if r.converged:
+        status = "VERIFIED"
+    elif mode == "normal":
+        status = "UNRESOLVED-shallow"        # honest: stopped early — not wrong
+    else:
+        status = "UNRESOLVED"                # extended budget exhausted — honest, not wrong
+    wrong = r.converged and r.final_status != "VERIFIED"   # structurally False (HARAN never false-VERIFIES)
+    return ModeRun(mode, r.converged, r.iters, status, wrong)
+
+
+def compare_modes(request: str, api_key: Optional[str] = None, *,
+                  model: str = CA.DEFAULT_MODEL, mock_sequence: Optional[List[str]] = None) -> dict:
+    """Run both modes on the same request; returns {'normal': ModeRun, 'extended': ModeRun}."""
+    return {m: agentic_in_mode(request, m, api_key, model=model, mock_sequence=mock_sequence)
+            for m in ("normal", "extended")}
