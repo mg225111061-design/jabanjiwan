@@ -106,3 +106,41 @@ def add_proof_sinks(b: Boundary, proven_safe_lines: List[int], strength: float =
             b.sink_strength[nid] = strength
             b.conductance[nid] = 1.0 - strength + 0.01   # strong proof → strong insulation (low conductance)
     return b
+
+
+# ===================================================================================================
+# G4 — solve the diffusion with the boundary conditions, then rank.
+# ===================================================================================================
+import diffuse as _DF  # noqa: E402
+
+
+def solve_diffusion(b: Boundary, alpha: float = 0.85, use_sinks: bool = True) -> np.ndarray:
+    """Absorbing random walk: heat is injected (x₀ + source), flows along conductance-weighted edges,
+    and is ABSORBED at proven-safe sinks (which stay at 0). use_sinks=False → pure PRFL (no sinks)."""
+    g = b.graph
+    n = g.n()
+    A = g.adjacency().astype(float)
+    inj = (b.x0 / (b.x0.sum() or 1.0)) + (b.source / (b.source.sum() or 1.0))
+    if use_sinks:
+        A = A * np.outer(b.conductance, b.conductance)        # insulation weights the edges
+        transient = [i for i in range(n) if i not in b.sinks]
+    else:
+        transient = list(range(n))
+    if not transient:
+        return np.zeros(n)
+    P = _DF.transition(A)
+    Q = P[np.ix_(transient, transient)]
+    bt = inj[transient]
+    xt = np.linalg.solve(np.eye(len(transient)) - alpha * Q, bt)
+    x = np.zeros(n)
+    for k, i in enumerate(transient):
+        x[i] = max(0.0, xt[k])
+    return x
+
+
+def rank_lines(b: Boundary, use_sinks: bool = True, alpha: float = 0.85):
+    """Return [(line, heat)] sorted hottest-first (proven-safe sinks fall to 0)."""
+    x = solve_diffusion(b, alpha=alpha, use_sinks=use_sinks)
+    pairs = [(b.graph.line_of(i), x[i]) for i in range(b.graph.n())]
+    pairs.sort(key=lambda p: p[1], reverse=True)
+    return pairs
