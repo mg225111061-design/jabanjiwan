@@ -52,7 +52,7 @@ def analyze(source: str, filename: Optional[str] = None, n_random: int = 400,
     hfn = fr.module.functions[0]
     fn = PR.compile_callable(hfn)
     props = PR.extract_properties(hfn)
-    inputs = PT.gen_int_lists(n_random)
+    inputs = PT.gen_inputs(hfn, n_random)
     rep = PT.test_properties(fn, props, inputs)
     violated = [p for p in props if p.name in rep.violated_properties()]
     if not violated:

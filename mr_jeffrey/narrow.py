@@ -160,7 +160,7 @@ class NarrowMeasurement:
 def narrow(hfn: hir.HFunction, n_random: int = 800, seed: int = 0) -> NarrowMeasurement:
     fn = PR.compile_callable(hfn)
     props = PR.extract_properties(hfn)
-    inputs = PT.gen_int_lists(n_random, seed=seed)
+    inputs = PT.gen_inputs(hfn, n_random, seed=seed)
     rep = PT.test_properties(fn, props, inputs)
     violated = [p for p in props if p.name in rep.violated_properties()]
     res = bayesian_narrow(hfn, violated)

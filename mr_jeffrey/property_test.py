@@ -29,6 +29,36 @@ def gen_int_lists(n: int, seed: int = 0, max_len: int = 8, val: int = 20) -> Lis
     return out
 
 
+def gen_int_scalars(n: int, seed: int = 0, val: int = 50) -> List[int]:
+    rng = random.Random(seed)
+    edges = [0, 1, 2, 3, 5, 10, -1, -3]
+    return edges + [rng.randint(-val, val) for _ in range(n)]
+
+
+def infer_domain(hfn) -> str:
+    """Probe whether the function takes a LIST or a SCALAR, so we don't feed lists to a scalar function
+    (which would crash and be miscounted as a violation — a false positive)."""
+    import properties as PR
+    try:
+        fn = PR.compile_callable(hfn)
+    except Exception:
+        return "list"
+    try:
+        fn([1, 2, 3])
+        return "list"
+    except Exception:
+        try:
+            fn(3)
+            return "scalar"
+        except Exception:
+            return "list"
+
+
+def gen_inputs(hfn, n: int = 400, seed: int = 0) -> List:
+    """Domain-aware input generation: scalars for scalar functions, int-lists for list functions."""
+    return gen_int_scalars(n, seed) if infer_domain(hfn) == "scalar" else gen_int_lists(n, seed)
+
+
 # ----------------------------------------------------------------- testing
 @dataclass
 class TestReport:

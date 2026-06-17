@@ -92,7 +92,7 @@ def _grade(causal_recovered: bool, top_posterior: float, n_props: int) -> str:
 def build_report(hfn: hir.HFunction, n_random: int = 400, proven_digit: str = "see B6") -> Optional[BugReport]:
     fn = PR.compile_callable(hfn)
     props = PR.extract_properties(hfn)
-    inputs = PT.gen_int_lists(n_random)
+    inputs = PT.gen_inputs(hfn, n_random)
     rep = PT.test_properties(fn, props, inputs)
     violated = [p for p in props if p.name in rep.violated_properties()]
     if not violated:
