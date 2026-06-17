@@ -29,7 +29,15 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--txt);font-family:var(--font);
-    -webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh}
+    -webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh;
+    transition:background .5s ease}
+  /* two modes — contrasting accents (T2). normal = cool blue, extended = warm purple. */
+  body.mode-normal{--accent:var(--normal)}
+  body.mode-extended{--accent:var(--extended)}
+  .backdrop{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.55;
+    transition:background .6s ease;
+    background:radial-gradient(58% 46% at 50% -4%,
+      color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%)}
   .wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px}
   /* header */
   header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px}
@@ -46,6 +54,18 @@
   .hero h1{font-size:34px;font-weight:700;line-height:1.3;letter-spacing:-.5px;
     max-width:760px;margin:0 auto 18px}
   .hero p.sub{font-size:18px;color:var(--txt-dim);max-width:600px;margin:0 auto}
+  /* mode selector (T2) — click to switch; colors + lift transition */
+  .mode-select{display:flex;gap:12px;justify-content:center;margin-bottom:30px;flex-wrap:wrap}
+  .mode-pill{flex:0 1 210px;text-align:left;cursor:pointer;background:var(--panel);
+    border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;
+    transition:border-color .35s ease,box-shadow .35s ease,background .35s ease,transform .2s ease}
+  .mode-pill:hover{transform:translateY(-1px)}
+  .mode-pill .name{font-weight:700;font-size:16px;margin-bottom:3px;transition:color .35s ease}
+  .mode-pill .desc{font-size:12.5px;color:var(--txt-faint)}
+  .mode-pill.on{border-color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 12%, var(--panel));
+    box-shadow:0 0 0 1px var(--accent),0 10px 34px -16px var(--accent)}
+  .mode-pill.on .name{color:var(--accent)}
   /* generic rounded panels */
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
     padding:22px}
@@ -55,6 +75,7 @@
 </style>
 </head>
 <body>
+  <div class="backdrop"></div>
   <div class="wrap">
     <header>
       <div class="logo">HARAN<span class="dot">.</span></div>
@@ -69,6 +90,17 @@
       <h1 data-i18n="hero">코드를 짜고, 수학적으로 검증합니다.</h1>
       <p class="sub" data-i18n="sub">Claude가 작성하고 HARAN이 증명합니다.</p>
     </section>
+
+    <div class="mode-select" id="modeSelect">
+      <div class="mode-pill" data-mode="normal">
+        <div class="name" data-i18n="mode_normal_name">일반</div>
+        <div class="desc" data-i18n="mode_normal_desc">빠른 속도 · 흔한 경우 · 절대 틀리지 않음</div>
+      </div>
+      <div class="mode-pill" data-mode="extended">
+        <div class="name" data-i18n="mode_extended_name">확장</div>
+        <div class="desc" data-i18n="mode_extended_desc">더 깊이 · 더 많이 해결 · 동일하게 정확</div>
+      </div>
+    </div>
 
     <section class="card">
       <p data-i18n="placeholder" style="color:var(--txt-dim)">대화형 인터페이스가 여기에 들어갑니다.</p>
@@ -88,6 +120,10 @@ const I18N = {
     hero: "코드를 짜고, 수학적으로 검증합니다.",
     sub: "Claude가 작성하고 HARAN이 증명합니다.",
     placeholder: "대화형 인터페이스가 여기에 들어갑니다.",
+    mode_normal_name: "일반",
+    mode_normal_desc: "빠른 속도 · 흔한 경우 · 절대 틀리지 않음",
+    mode_extended_name: "확장",
+    mode_extended_desc: "더 깊이 · 더 많이 해결 · 동일하게 정확",
     note_key: "API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).",
     note_confirm: "화면의 시각·체감은 사용자 확인이 필요합니다.",
   },
@@ -95,6 +131,10 @@ const I18N = {
     hero: "It writes code, and verifies it mathematically.",
     sub: "Claude writes; HARAN proves.",
     placeholder: "The conversational interface goes here.",
+    mode_normal_name: "Normal",
+    mode_normal_desc: "Fast · common case · never wrong",
+    mode_extended_name: "Extended",
+    mode_extended_desc: "Deeper · solves more · equally correct",
     note_key: "Your API key is entered each time and stored nowhere (level 1).",
     note_confirm: "The screen's look & feel needs user confirmation.",
   },
@@ -116,6 +156,22 @@ document.getElementById("langToggle").addEventListener("click", e=>{
   const b = e.target.closest("button"); if(b) setLang(b.getAttribute("data-lang"));
 });
 setLang("ko");
+
+// ── two modes (T2): normal / extended — contrasting accent + click transition ───────────────
+let MODE = "normal";
+function setMode(mode){
+  if(mode !== "normal" && mode !== "extended") return;
+  MODE = mode;
+  document.body.classList.toggle("mode-normal", mode === "normal");
+  document.body.classList.toggle("mode-extended", mode === "extended");
+  document.querySelectorAll(".mode-pill").forEach(p=>{
+    p.classList.toggle("on", p.getAttribute("data-mode") === mode);
+  });
+}
+document.getElementById("modeSelect").addEventListener("click", e=>{
+  const p = e.target.closest(".mode-pill"); if(p) setMode(p.getAttribute("data-mode"));
+});
+setMode("normal");
 </script>
 </body>
 </html>
