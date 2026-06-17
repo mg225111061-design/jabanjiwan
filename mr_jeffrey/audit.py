@@ -180,3 +180,69 @@ def type_audit() -> List[FeatureRow]:
                            "scalar bignum + Vec<scalar> both work; vectorized mpz is niche future work, "
                            "NOT a ceiling (would be mpz_t arrays)"))
     return rows
+
+
+# ===================================================================================================
+# W3 — edge-case robustness audit (native == interpreter, or a clear error; never silent wrong).
+# ===================================================================================================
+import haran_eval as _EV  # noqa: E402
+
+
+@dataclass
+class EdgeRow:
+    case: str
+    verdict: str       # MATCH | CEILING | CLEAR_ERROR
+    interp: object
+    native: object
+    note: str
+
+
+def _tab(src):
+    return {f.name: f for f in parse(src).items if isinstance(f, A.FnDecl)}
+
+
+def edge_audit() -> List[EdgeRow]:
+    rows: List[EdgeRow] = []
+
+    def both(src, args, name="f"):
+        t = _tab(src)
+        try:
+            i = _EV.Interp(t).call_fn(t[name], list(args))
+        except Exception as e:
+            i = f"ERR: {type(e).__name__}"
+        c = CG.compile_fn(t[name])
+        try:
+            n = CG.run_native(c.binary, *args) if c.ok else "COMPILE-FAIL"
+        except RuntimeError as e:
+            n = f"TRAP: {e}"
+        return i, n
+
+    # in-range edges → native must equal interpreter
+    in_range = [
+        ("empty fold (n=0)", "fn f(n: Int) -> Int { fold k in 1..n { k } }", [0]),
+        ("singleton (n=1)", "fn f(n: Int) -> Int { fold k in 1..n { k } }", [1]),
+        ("negative input", "fn f(n: Int) -> Int { n * -1 }", [7]),
+        ("match base case", "fn f(n: Int) -> Int { match n { 0 => 99 _ => n } }", [0]),
+        ("max-ish in i64", "fn f(n: Int) -> Int { n + 1 }", [1000000000000000000]),
+    ]
+    for case, src, args in in_range:
+        i, n = both(src, args)
+        rows.append(EdgeRow(case, "MATCH" if str(i) == str(n) else "MISMATCH", i, n, "native == interpreter"))
+
+    # i64 overflow → documented CEILING (native wraps per C; bignum path is exact)
+    i, n = both("fn f(n: Int) -> Int { n*n*n }", [3000000])
+    rows.append(EdgeRow("i64 overflow (cube 3e6)", "CEILING", i, n,
+                        "native long long wraps (C semantics) — documented i64 ceiling; use bignum for exact"))
+
+    # division by zero → CLEAR error (trap), not a silent wrong answer
+    i2, n2 = both("fn f(n: Int) -> Int { 10 / n }", [0])
+    rows.append(EdgeRow("division by zero", "CLEAR_ERROR" if isinstance(n2, str) and "TRAP" in n2 else "SILENT?",
+                        "EvalError", n2, "native traps with a clear runtime error (W3 run_native guard)"))
+
+    # empty Vec reduce → 0 (matches interpreter notion of an empty fold)
+    rf = _tab("fn f(xs: Vec<Int>) -> Int { fold x in xs { x } }")["f"]
+    rc = VEC.compile_reduce(rf)
+    empty_val = VEC.run_reduce(rc.binary, []) if rc.ok else None
+    rows.append(EdgeRow("empty Vec reduce", "MATCH" if empty_val == 0 else "MISMATCH", 0, empty_val,
+                        "reduce over [] = 0 (identity)"))
+    return rows

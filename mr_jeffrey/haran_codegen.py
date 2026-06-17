@@ -210,5 +210,8 @@ def compile_fn(fn: A.FnDecl) -> Compiled:
 
 
 def run_native(binary: str, *args) -> int:
-    out = subprocess.run([binary, *[str(a) for a in args]], capture_output=True, text=True, timeout=30).stdout.strip()
-    return int(out)
+    r = subprocess.run([binary, *[str(a) for a in args]], capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        # W3: a native trap (e.g. division by zero → SIGFPE) is a CLEAR error, never a silent wrong answer
+        raise RuntimeError(f"native runtime trap (exit {r.returncode}: e.g. division-by-zero / overflow trap)")
+    return int(r.stdout.strip())
