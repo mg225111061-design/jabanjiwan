@@ -76,6 +76,10 @@ def build():
     # standalone .gitignore so `git init && git add .` in haran-web is clean
     with open(os.path.join(DST, ".gitignore"), "w", encoding="utf-8") as f:
         f.write("__pycache__/\n*.pyc\n*.pyo\n.env\n.venv/\n.coverage\n")
+    # carry the project handoff (for the next session / the new repo) if present at repo root
+    handoff = os.path.join(SRC, "..", "HANDOFF.md")
+    if os.path.exists(handoff):
+        shutil.copy2(handoff, os.path.join(DST, "HANDOFF.md"))
     print(f"clean repo → {DST}")
     print(f"  modules: {len(mods)}  (from {len(_local_modules())} in the engine)")
     print(f"  assets : {[a for a in ASSETS if os.path.exists(os.path.join(SRC, a))]}")
