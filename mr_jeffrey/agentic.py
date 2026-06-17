@@ -25,6 +25,8 @@ from typing import Callable, List, Optional
 import ai_loop
 import claude_agent as CA
 import closure_classifier as CC
+import fusion
+import prove_exact as PE
 from haran_parser import parse
 
 
@@ -201,3 +203,43 @@ def compare_modes(request: str, api_key: Optional[str] = None, *,
     """Run both modes on the same request; returns {'normal': ModeRun, 'extended': ModeRun}."""
     return {m: agentic_in_mode(request, m, api_key, model=model, mock_sequence=mock_sequence)
             for m in ("normal", "extended")}
+
+
+# ---------------------------------------------------------------------------------------------------
+# S6 — Type A integration: spec-EMBEDDED verification with a PROOF TIER.
+# The HARAN code carries its spec in the `ensures` clause (Type A). Instead of a boolean, we discharge
+# it with the exact engine (prove_exact: jeff/Z3 closed-form ∀), yielding a graded tier:
+#   PROVEN          — exact ∀ proof (unbounded; the strong result)
+#   PROVEN-BOUNDED  — proven on a bounded domain
+#   TESTED          — bounded fuzz found no counterexample (honestly weaker — NOT an ∀ claim)
+#   FAILED          — counterexample found
+#   UNKNOWN         — couldn't decide
+# (Type B = general-language code via fusion/HIR; that path is for Python/C/etc., not HARAN folds.)
+#
+# HONESTY: the tiers are kept DISTINCT and never inflated — TESTED is never reported as PROVEN. The
+# embedded spec is surfaced verbatim (no intent guessing).
+# ---------------------------------------------------------------------------------------------------
+
+@dataclass
+class TypeAResult:
+    tier: str                 # PROVEN | PROVEN-BOUNDED | TESTED | FAILED | UNKNOWN | PARSE_ERROR | NONE
+    proven_forall: bool       # True iff tier == PROVEN (the only unbounded-∀ tier)
+    spec: str                 # the embedded `ensures` spec (verbatim)
+    detail: str               # the proof / failure detail
+    counterexample: Optional[dict]
+
+
+def verify_typeA(code: str) -> TypeAResult:
+    """S6: discharge the EMBEDDED `ensures` spec with the exact proof engine, returning a graded tier
+    (PROVEN ∀ / PROVEN-BOUNDED / TESTED / FAILED / UNKNOWN). Spec-embedded = Type A."""
+    prog = parse(code)
+    if prog.errors:
+        return TypeAResult("PARSE_ERROR", False, "", str(prog.errors[0]), None)
+    fns = prog.fns()
+    if not fns:
+        return TypeAResult("NONE", False, "", "no function found", None)
+    ftab = {f.name: f for f in fns}
+    v = PE.prove_correctness(fns[0], ftab)
+    spec = fusion.extract_spec(code) or ""
+    return TypeAResult(tier=v.tier, proven_forall=(v.tier == "PROVEN"), spec=spec,
+                       detail=str(v.detail), counterexample=v.counterexample)
