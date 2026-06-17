@@ -73,6 +73,9 @@ def build():
     rs = os.path.join(SRC, "haran_web_README.md")
     if os.path.exists(rs):
         shutil.copy2(rs, os.path.join(DST, "README.md"))
+    # standalone .gitignore so `git init && git add .` in haran-web is clean
+    with open(os.path.join(DST, ".gitignore"), "w", encoding="utf-8") as f:
+        f.write("__pycache__/\n*.pyc\n*.pyo\n.env\n.venv/\n.coverage\n")
     print(f"clean repo → {DST}")
     print(f"  modules: {len(mods)}  (from {len(_local_modules())} in the engine)")
     print(f"  assets : {[a for a in ASSETS if os.path.exists(os.path.join(SRC, a))]}")
