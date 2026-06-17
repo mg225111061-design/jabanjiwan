@@ -11,3 +11,8 @@ Cargo.lock.bak
 kernels/
 install_kernels.sh
 tools/
+
+# coverage.py data artifacts (v19 audit)
+.coverage
+**/.coverage
+cov*.json
