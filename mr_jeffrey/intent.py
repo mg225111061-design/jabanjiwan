@@ -178,3 +178,42 @@ def assess_clarity(request: str, api_key: Optional[str] = None, *,
     clear = bool(obj.get("clear", True))
     asks = [str(a) for a in obj.get("asks", [])] if isinstance(obj.get("asks", []), list) else []
     return ClarityResult(clear, asks if not clear else [], "claude" if api_key else "mock-default", gen.source)
+
+
+# ── U3: chat reply (non-coding → a plain answer, NEVER verified) ─────────────────────────────────
+# Chat/questions get a normal LLM answer. ★ It carries NO verification label ★ — we did not prove it,
+# so we never stamp it "PROVEN/반례". (Coding answers are HARAN-verified; chat answers are not. Honest.)
+CHAT_SYSTEM = ("You are MR.JEFFREY, a friendly assistant for a verified-coding product. Answer briefly "
+               "and warmly. After smalltalk, gently offer to build & verify some code.")
+
+
+@dataclass
+class ChatReply:
+    text: str
+    source: str = "mock-sim"          # "claude-live" | "mock-sim"
+    kind: str = "chat"
+    verified: bool = False            # ALWAYS False — chat is never verified (no proof label)
+
+
+def _canned_chat(text: str) -> str:
+    t = (text or "").lower()
+    if _has(t, ["안녕", "하이", "헬로", "반가", "hi", "hello", "hey", "what's up"]):
+        return "안녕하세요! 무엇을 만들어 드릴까요? (Hi! What should we build & verify?)"
+    if _has(t, ["고마", "감사", "thanks", "thank you"]):
+        return "천만에요! 코드가 필요하면 언제든 말씀해 주세요. (Anytime — say the word for code.)"
+    if _has(t, ["누구", "who are you", "mr.jeffrey", "mr. jeffrey", "haran", "뭐야", "what is", "뭔지"]):
+        return ("저는 MR.JEFFREY예요 — Claude가 코드를 짜면 제가 수학적으로 검증·최적화합니다. "
+                "함수나 알고리즘을 요청해 보세요. (I'm MR.JEFFREY: Claude writes code, I verify & "
+                "optimize it mathematically. Ask for a function or algorithm.)")
+    return ("음 — 코드로 만들어 검증해 드릴까요? 예: '정렬 함수' 같은 걸요. "
+            "(Want me to turn that into verified code? e.g. a sort function.)")
+
+
+def chat_reply(text: str, api_key: Optional[str] = None, history=None, *,
+               mock_response: Optional[str] = None) -> ChatReply:
+    """U3: a plain conversational answer for CHAT/QUESTION. With a key → a real Claude reply (general
+    system prompt). No key → a canned SIM reply. NEVER carries a verification label (verified=False)."""
+    if api_key:
+        gen = CA.claude_generate(text, api_key, system=CHAT_SYSTEM)   # general answer, not HARAN code
+        return ChatReply(gen.text, gen.source)
+    return ChatReply(mock_response or _canned_chat(text), "mock-sim")
