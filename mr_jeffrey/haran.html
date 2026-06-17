@@ -141,6 +141,14 @@
     border-radius:var(--radius-sm);padding:10px 12px;color:var(--txt);font-size:13px;
     font-family:var(--font);letter-spacing:.12em}
   .key-status{flex:0 0 auto;font-size:11.5px;font-weight:700;color:var(--ok);white-space:nowrap}
+  /* V5: accent * + no-log policy popover */
+  .key-star{flex:0 0 auto;background:none;border:none;color:var(--accent);font-size:20px;font-weight:800;
+    cursor:pointer;line-height:1;padding:0 6px;transition:transform .15s ease,color .35s ease}
+  .key-star:hover{transform:scale(1.25)}
+  .key-pop{position:absolute;bottom:calc(100% + 10px);left:0;right:0;background:var(--panel-2);
+    border:1px solid var(--accent);border-radius:var(--radius-sm);padding:13px 15px;font-size:12.5px;
+    color:var(--txt);line-height:1.55;z-index:30;box-shadow:0 10px 34px -14px rgba(0,0,0,.55)}
+  .key-pop[hidden]{display:none}
   .composer-row{display:flex;gap:10px}
   .composer textarea{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);
     padding:11px 13px;color:var(--txt);font-size:14.5px;resize:none;min-height:46px;font-family:var(--font)}
@@ -253,7 +261,11 @@
           <input id="keyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
                  data-i18n-ph="key_ph" aria-label="Claude API key — entered each time, stored nowhere"
                  placeholder="Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)">
+          <button class="key-star" id="keyStar" type="button" aria-label="API key no-log policy">*</button>
           <span class="key-status" id="keyStatus" aria-live="polite"></span>
+          <div class="key-pop" id="keyPop" role="tooltip" hidden>
+            <span data-i18n="nolog_policy">Mr.Jeffrey는 API Key 노-로그 정책을 고수합니다. 여기에 넣으면 어디에도 유출되지 않고 저장되지 않습니다.</span>
+          </div>
         </div>
         <div class="composer-row">
           <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" aria-label="instruction / 지시"
@@ -307,6 +319,7 @@ const I18N = {
     send: "실행",
     clear: "새 대화",
     key_set: "●●●● 입력됨",
+    nolog_policy: "Mr.Jeffrey는 API Key 노-로그 정책을 고수합니다. 여기에 넣으면 어디에도 유출되지 않고 저장되지 않습니다.",
     key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
     req_ph: "상상하는 모든 걸 시작해보세요",
     copied: "복사됨",
@@ -361,6 +374,7 @@ const I18N = {
     send: "Run",
     clear: "New chat",
     key_set: "●●●● entered",
+    nolog_policy: "Mr.Jeffrey enforces a strict no-log policy for your API key: it is used only for your Claude call, never logged and never stored anywhere.",
     key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
     req_ph: "Start everything you imagine",
     copied: "Copied",
@@ -754,6 +768,13 @@ quickEl.addEventListener("click", e=>{
 });
 // V4: update the masked key confirmation as the user types (value never read into the DOM)
 keyEl.addEventListener("input", refreshDynamic);
+// V5: accent * → no-log policy popover (click to open, click outside / again to close)
+const keyStar = document.getElementById("keyStar");
+const keyPop = document.getElementById("keyPop");
+keyStar.addEventListener("click", e=>{ e.stopPropagation(); keyPop.hidden = !keyPop.hidden; });
+document.addEventListener("click", e=>{
+  if(!keyPop.hidden && e.target !== keyStar && !keyPop.contains(e.target)) keyPop.hidden = true;
+});
 // U6: chips hidden by default; toggle to expand/collapse (less clutter)
 const quickToggle = document.getElementById("quickToggle");
 const qchips = document.getElementById("qchips");
