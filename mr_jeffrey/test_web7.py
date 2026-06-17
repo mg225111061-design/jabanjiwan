@@ -50,9 +50,11 @@ def stream_order():
 def verify_events():
     ev = _events({"prompt": "sum 1..n", "mode": "extended"})
     statuses = [e.get("status") for e in ev if e["type"] == "verify"]
-    ok = "verifying" in statuses and "proven" in statuses
-    check("verify_events", ok, f"verify_statuses={statuses}")
-    print(f"      → verify events: {statuses} — 'verifying' (⏳, v21 background framing) then resolved.")
+    stages = [e.get("stage") for e in ev if e["type"] == "stage"]
+    ok = "proven" in statuses and "verify" in stages          # U5: 'verify' is now a real STAGE event
+    check("verify_events", ok, f"verify_statuses={statuses} stages={stages}")
+    print(f"      → real stage events {stages} (분류중/Claude 호출중/검증중/최적화중) + verify result "
+          f"{statuses}. The 'verify' stage is shown only while HARAN actually verifies (U5).")
 
 
 def fix_loop_events():
@@ -61,13 +63,14 @@ def fix_loop_events():
     # The agentic mock's default code is correct (no refute), so we assert the stream CAN carry a fix:
     ev = _events({"prompt": "sum 1..n", "mode": "extended"})
     types = [e["type"] for e in ev]
-    # structurally, the generator emits fix/fixed on FAILED trace steps; assert the machinery exists in src
-    src = open("server.py").read()
-    has_fix_machinery = '"type": "fix"' in src and '"type": "fixed"' in src and '"refuted"' in src
+    # the loop lives in agentic.agentic_stream: a refuted round yields stage 'fix' + a refuted result,
+    # then re-generates (via _fix_prompt). Assert that machinery exists.
+    ag = open("agentic.py").read()
+    has_fix_machinery = '"fix"' in ag and '"refuted"' in ag and "_fix_prompt" in ag
     ok = has_fix_machinery and "done" in types
     check("fix_loop_events", ok, f"fix_machinery={has_fix_machinery}")
-    print("      → on a refuted round the stream emits verify(refuted) → fix(attempt,cx) → fixed → "
-          "re-verify (the write→verify→fix loop, live). [real refutes when Claude proposes wrong code]")
+    print("      → on a refuted round: verify(refuted) → stage 'fix' (반례 수정중) → re-generate → "
+          "re-verify (the write→verify→fix loop, streamed). [real refutes when Claude proposes wrong code]")
 
 
 def scope_stream():

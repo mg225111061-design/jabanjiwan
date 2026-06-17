@@ -319,6 +319,56 @@ def agentic_code(request: str, mode: str = "normal", api_key: Optional[str] = No
     )
 
 
+# ---------------------------------------------------------------------------------------------------
+# U5 — streaming pipeline: same loop as write_verify_fix + optimize, but it YIELDS a stage event before
+# each REAL step so the UI can show honest progress (generate → verify → fix → optimize). Each stage is
+# emitted only when that work actually runs (no fake progress). Live: 'generate' is a real Claude call
+# (the long wait); mock: instant (and the final result is labeled mock-sim).
+# ---------------------------------------------------------------------------------------------------
+
+def agentic_stream(request: str, mode: str = "normal", api_key: Optional[str] = None, *,
+                   history: Optional[List[HistoryTurn]] = None, model: str = CA.DEFAULT_MODEL,
+                   mock_sequence: Optional[List[str]] = None):
+    """Yields stage dicts: {'stage': 'generate'|'fix'|'code_done'|'verify'|'refuted'|'optimize'|'done'}.
+    The final {'stage':'done','result': AgenticResult} carries the full result (serialize as usual)."""
+    t0 = time.perf_counter()
+    task = _with_history(request, history)
+    budget = MODE_BUDGET.get(mode, 2)
+    fn = _claude_model_fn(api_key, model, mock_sequence)
+    prompt, trace = task, []
+    converged, final_code, final_status = False, "", "NONE"
+    for i in range(budget):
+        yield {"stage": "generate" if i == 0 else "fix", "iter": i + 1}   # Claude 호출중 / 반례 수정중
+        code = fn(prompt).strip()
+        yield {"stage": "code_done", "code": code, "iter": i + 1}
+        yield {"stage": "verify", "iter": i + 1}                          # 검증중 (HARAN, real)
+        v = ai_loop.verify_haran(code)
+        trace.append(ai_loop.LoopStep(i + 1, "write" if i == 0 else "fix", prompt, code, v))
+        final_code, final_status = code, v.status
+        if v.ok:
+            converged = True
+            break
+        yield {"stage": "refuted", "iter": i + 1, "counterexample": v.counterexample}
+        prompt = ai_loop._fix_prompt(task, code, v)
+
+    opt, tier = None, "(not proven)"
+    if converged:
+        yield {"stage": "optimize"}                                       # 최적화중 (fold, real)
+        opt = optimize(final_code)
+        tier = verify_typeA(final_code).tier
+    ms = (time.perf_counter() - t0) * 1000
+    if converged:
+        status = "VERIFIED"
+    elif mode == "normal":
+        status = "UNRESOLVED-shallow"
+    else:
+        status = "UNRESOLVED" if final_status != "FAILED" else "FAILED"
+    res = AgenticResult(request=request, mode=mode, source="claude-live" if api_key else "mock-sim",
+                        converged=converged, iters=len(trace), status=status, final_code=final_code,
+                        proof_tier=tier, optimization=opt, ms=ms, history_len=len(history or []), trace=trace)
+    yield {"stage": "done", "result": res}
+
+
 @dataclass
 class AgenticMeasurement:
     mode: str

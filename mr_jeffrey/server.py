@@ -123,60 +123,74 @@ def _chunks(s: str, n: int = 16) -> List[str]:
 
 
 def stream_events(payload: Optional[dict]) -> Iterator[str]:
-    """T7 core: yield the SSE event stream for one request. LEVEL-1 key (used once, dropped, never
-    stored/logged). The proof results come from agentic_code; the stream shape mirrors the UI flow."""
+    """T7/U5 core: route the message, then stream REAL progress stages + results over SSE. LEVEL-1 key
+    (used once, dropped, never stored/logged/echoed). Each 'stage' is emitted only when that work runs:
+      classify → (chat: thinking → chat) | (scope: note) | (vague: ask) | (code: generate → verify →
+      [refuted → fix] → optimize → proven/optimized → done). Stages map 1:1 to the real pipeline."""
     p = payload or {}
     prompt = str(p.get("prompt", "")).strip()
     mode = p.get("mode", "normal")
+    history = parse_history(p.get("history"))
+    api_key = p.get("apiKey") or None
     if not prompt:
         yield sse_event({"type": "error", "message": "empty prompt"})
         return
-    if is_scope(prompt):                         # intent-gap honesty: scope note, no fake verify
-        yield sse_event({"type": "note", "text": SCOPE_MESSAGE})
-        yield sse_event({"type": "done", "summary": _scope_result(prompt, mode)})
-        return
-    history = parse_history(p.get("history"))
-    api_key = p.get("apiKey") or None
     try:
-        res = AG.agentic_code(prompt, mode, api_key, history=history)
+        yield sse_event({"type": "stage", "stage": "classify"})           # 분류중 (local, ~instant)
+        it = IN.classify_intent(prompt, api_key)
+
+        if it.intent != "CODING":                                          # chat / question
+            yield sse_event({"type": "stage", "stage": "thinking"})        # 생각중
+            cr = IN.chat_reply(prompt, api_key, history)
+            yield sse_event({"type": "chat", "reply": cr.text})            # plain answer, NO verify label
+            yield sse_event({"type": "done", "summary": {"kind": "chat", "verified": False,
+                                                         "source": cr.source, "intent": it.intent}})
+            return
+
+        if IN.is_scope(prompt):                                            # whole-program → scope note
+            yield sse_event({"type": "note", "text": IN.SCOPE_REPLY})
+            yield sse_event({"type": "done", "summary": {"kind": "chat", "scope": True,
+                                                         "verified": False, "source": "local"}})
+            return
+
+        clarity = IN.assess_clarity(prompt, api_key)
+        if not clarity.clear:                                              # vague → expected questions
+            yield sse_event({"type": "ask", "asks": clarity.asks})
+            yield sse_event({"type": "done", "summary": {"kind": "ask", "asks": clarity.asks,
+                                                         "verified": False, "source": clarity.source}})
+            return
+
+        # coding pipeline — emit each real stage as it runs
+        for ev in AG.agentic_stream(prompt, mode, api_key, history=history):
+            st = ev["stage"]
+            if st in ("generate", "fix", "verify", "optimize"):
+                d = {"type": "stage", "stage": st}
+                if "iter" in ev:
+                    d["iter"] = ev["iter"]
+                yield sse_event(d)
+            elif st == "code_done":
+                for chunk in _chunks(ev["code"]):
+                    yield sse_event({"type": "token", "text": chunk})
+                yield sse_event({"type": "code_done", "code": ev["code"]})
+            elif st == "refuted":
+                yield sse_event({"type": "verify", "status": "refuted",
+                                 "counterexample": ev.get("counterexample")})
+            elif st == "done":
+                res = ev["result"]
+                rd = to_result_dict(res)
+                rd["kind"] = "code"
+                yield sse_event({"type": "verify",
+                                 "status": "proven" if res.proof_tier == "PROVEN" else "shallow",
+                                 "tier": res.proof_tier})
+                opt = rd["optimization"]
+                if opt and opt["optimized"]:
+                    yield sse_event({"type": "optimized", "closed_form": opt["closed_form"],
+                                     "speedup": opt["speedup"]})
+                yield sse_event({"type": "done", "summary": rd})
     except Exception as e:   # noqa: BLE001 — redact, never leak the key
         yield sse_event({"type": "error", "message": f"{type(e).__name__}: {CA.redact_key(str(e))}"})
-        return
     finally:
         api_key = None
-
-    rd = to_result_dict(res)
-    # scope / no-code (intent-gap honesty): emit a note, then done — no fake verification
-    if not rd["code"]:
-        yield sse_event({"type": "note", "text": "scope: small~medium code verified against a spec"})
-        yield sse_event({"type": "done", "summary": rd})
-        return
-
-    for chunk in _chunks(rd["code"]):                       # token stream of the generated code
-        yield sse_event({"type": "token", "text": chunk})
-    yield sse_event({"type": "code_done", "code": rd["code"]})
-
-    attempt = 0
-    for st in rd["trace"]:                                  # one verify (+fix) per loop iteration
-        yield sse_event({"type": "verify", "status": "verifying", "name": res.request})
-        if st["status"] == "VERIFIED":
-            yield sse_event({"type": "verify", "status": "proven", "time": rd["ms"]})
-        elif st["status"] == "FAILED":
-            yield sse_event({"type": "verify", "status": "refuted", "counterexample": st["counterexample"]})
-            attempt += 1
-            yield sse_event({"type": "fix", "counterexample": st["counterexample"], "attempt": attempt})
-            yield sse_event({"type": "fixed", "code": rd["code"]})
-        else:
-            yield sse_event({"type": "verify", "status": "shallow"})
-
-    # final proof tier + (if any) the mathematical optimization
-    yield sse_event({"type": "verify",
-                     "status": "proven" if res.proof_tier == "PROVEN" else "shallow",
-                     "tier": res.proof_tier})
-    opt = rd["optimization"]
-    if opt and opt["optimized"]:
-        yield sse_event({"type": "optimized", "closed_form": opt["closed_form"], "speedup": opt["speedup"]})
-    yield sse_event({"type": "done", "summary": rd})
 
 
 # ---------------------------------------------------------------------------------------------------

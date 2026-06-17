@@ -100,6 +100,15 @@
   .step{font-size:12.5px;color:var(--txt-dim);font-family:var(--mono);padding:3px 0;display:flex;gap:8px}
   .step .mk{flex:0 0 auto}
   .step.bad .mk{color:var(--bad)} .step.good .mk{color:var(--ok)}
+  /* progress indicator (U5) — shows the REAL current pipeline stage */
+  .progress{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--txt-dim);
+    font-weight:600;padding:5px 0}
+  .spinner{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:spin .8s linear infinite;flex:0 0 auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .asks{margin-top:6px}
+  .asks .ask{font-size:13.5px;color:var(--txt-dim);padding:6px 0;border-top:1px solid var(--line)}
+  .chatreply{font-size:14.5px;line-height:1.55;white-space:pre-wrap}
   .composer{border-top:1px solid var(--line);padding:16px 18px;background:var(--panel-2)}
   .composer input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line);
     border-radius:var(--radius-sm);padding:10px 12px;color:var(--txt);font-size:13px;margin-bottom:10px;
@@ -260,6 +269,13 @@ const I18N = {
     asst_extended: "확장 모드 · 깊은 검증",
     m_fast: "즉각 생성 (속도 우선)",
     verifying: "검증 중…",
+    stage_classify: "분류중..",
+    stage_generate: "Claude 호출중..",
+    stage_verify: "검증중..",
+    stage_fix: "반례 수정중..",
+    stage_optimize: "최적화중..",
+    stage_thinking: "생각중..",
+    asks_label: "예상 질문",
     m_verified: "검증됨 (명세 대비)",
     m_proven: "PROVEN ∀ (무한 ∀ 증명)",
     m_optimized: "수학적 최적화",
@@ -299,6 +315,13 @@ const I18N = {
     asst_extended: "Extended mode · deep verification",
     m_fast: "instant generation (speed first)",
     verifying: "verifying…",
+    stage_classify: "Classifying..",
+    stage_generate: "Calling Claude..",
+    stage_verify: "Verifying..",
+    stage_fix: "Fixing from counterexample..",
+    stage_optimize: "Optimizing..",
+    stage_thinking: "Thinking..",
+    asks_label: "Expected questions",
     m_verified: "verified (against the spec)",
     m_proven: "PROVEN ∀ (unbounded ∀ proof)",
     m_optimized: "Mathematical optimization",
@@ -487,38 +510,84 @@ async function streamAgentic(request, mode, key, history, onEvent){
   }
   return summary;
 }
-// progressive renderer: builds one assistant bubble up as events arrive
+// expected-questions block (U7 makes it collapsible; U5 lists them)
+function renderAsks(container, asks){
+  const wrap = document.createElement("div"); wrap.className = "asks";
+  const lab = document.createElement("div"); lab.className = "step";
+  lab.innerHTML = `<span class="mk">?</span>${esc(T("asks_label"))}`;
+  wrap.appendChild(lab);
+  (asks || []).forEach(a=>{ const d=document.createElement("div"); d.className="ask"; d.textContent=a; wrap.appendChild(d); });
+  container.appendChild(wrap);
+}
+// progressive renderer: builds one assistant bubble up as events arrive, with a REAL stage indicator
 function streamRender(mode){
   const m = addMsg("assistant", "");
   const bubble = m.querySelector(".bubble");
   const tagEl = document.createElement("div");
   tagEl.innerHTML = `<span class="modetag">${esc(mode==="extended"?T("asst_extended"):T("asst_normal"))}</span>`
                   + `<span class="simtag" data-tag>···</span>`;
-  const codeEl = document.createElement("div"); codeEl.className = "step";
+  const prog = document.createElement("div"); prog.className = "progress"; prog.style.display = "none";
+  prog.innerHTML = `<span class="spinner"></span><span class="pl"></span>`;
+  const codeEl = document.createElement("div"); codeEl.className = "step"; codeEl.style.display = "none";
   const codeSpan = document.createElement("span"); codeSpan.className = "code"; codeEl.appendChild(codeSpan);
   const steps = document.createElement("div");
-  bubble.append(tagEl, codeEl, steps);
+  bubble.append(tagEl, prog, codeEl, steps);
   let code = "";
+  const setStage = (s)=>{ prog.style.display = "flex"; prog.querySelector(".pl").textContent = T("stage_"+s);
+    msgsEl.scrollTop = msgsEl.scrollHeight; };
+  const stop = ()=>{ prog.style.display = "none"; };
   const step = (mk, text, cls)=>{ const d=document.createElement("div"); d.className="step "+(cls||"");
     d.innerHTML=`<span class="mk">${mk}</span>${esc(text)}`; steps.appendChild(d);
     msgsEl.scrollTop = msgsEl.scrollHeight; };
   return ev=>{
-    if(ev.type==="token"){ code += ev.text; codeSpan.textContent = code; }
-    else if(ev.type==="code_done"){ code = ev.code; codeSpan.textContent = code; }
+    if(ev.type==="stage"){ setStage(ev.stage); }                          // 분류중/Claude 호출중/검증중/…
+    else if(ev.type==="token"){ code += ev.text; codeEl.style.display=""; codeSpan.textContent = code; }
+    else if(ev.type==="code_done"){ code = ev.code; codeEl.style.display=""; codeSpan.textContent = code; }
     else if(ev.type==="verify"){
-      if(ev.status==="verifying") step("⏳", T("verifying"));
-      else if(ev.status==="proven") step("✓", (ev.tier?ev.tier+" · ":"")+T("m_proven"), "good");
+      if(ev.status==="proven") step("✓", (ev.tier?ev.tier+" · ":"")+T("m_proven"), "good");
       else if(ev.status==="refuted") step("✗", "반례 / counterexample: "+JSON.stringify(ev.counterexample||{}), "bad");
       else step("•", T("m_unresolved_shallow"));
     }
-    else if(ev.type==="fix") step("↻", "fix attempt "+ev.attempt);
+    else if(ev.type==="fix") step("↻", "fix "+(ev.attempt||""));
     else if(ev.type==="fixed"){ code = ev.code; codeSpan.textContent = code; }
     else if(ev.type==="optimized") step("∑", T("m_optimized")+": "+ev.closed_form+" · "+ev.speedup+" · ×N [TBD: 측정필요]");
-    else if(ev.type==="note") step("▢", T("scope_note"));
-    else if(ev.type==="error") step("⚠", ev.message, "bad");
-    else if(ev.type==="done"){ const tg=tagEl.querySelector("[data-tag]");
+    else if(ev.type==="chat"){ stop(); tagEl.querySelector(".modetag").style.display="none";
+      const d=document.createElement("div"); d.className="chatreply"; d.textContent = ev.reply; bubble.insertBefore(d, prog); }
+    else if(ev.type==="ask"){ stop(); renderAsks(steps, ev.asks); }
+    else if(ev.type==="note"){ stop(); step("▢", T("scope_note")); }
+    else if(ev.type==="error"){ stop(); step("⚠", ev.message, "bad"); }
+    else if(ev.type==="done"){ stop(); const tg=tagEl.querySelector("[data-tag]");
       if(tg) tg.textContent = (ev.summary && ev.summary.source==="claude-live") ? "LIVE" : "SIM"; }
   };
+}
+
+// ── client-side routing for the standalone (no-backend) mock, mirroring intent.py ───────────────
+const _SCOPE_RE = /백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|결제|payment/i;
+const _VAGUE_ASKS = {
+  "정렬": ["오름차순/내림차순? (ascending or descending?)", "원소 타입? (int / float / string?)"],
+  "sort": ["ascending or descending?", "element type? (int / float / string?)"],
+  "탐색": ["정렬된 입력? (sorted input?)", "원소 타입? (type?)"],
+  "search": ["sorted input?", "element type?"],
+};
+function _mockChatReply(t){
+  if(/안녕|하이|헬로|반가|hi|hello|hey/.test(t)) return "안녕하세요! 무엇을 만들어 드릴까요? (Hi! What should we build & verify?)";
+  if(/고마|감사|thanks|thank you/.test(t)) return "천만에요! 코드가 필요하면 언제든요. (Anytime — say the word for code.)";
+  if(/누구|who are you|뭐야|what is|haran|mr\.?jeffrey/.test(t)) return "저는 MR.JEFFREY예요 — Claude가 코드를 짜면 제가 수학적으로 검증·최적화합니다. (I'm MR.JEFFREY: Claude writes, I verify & optimize.)";
+  return "음 — 코드로 만들어 드릴까요? 예: '정렬 함수' (Want me to turn that into verified code?)";
+}
+function _localRoute(text){
+  const t = text.toLowerCase().trim();
+  const has = (arr)=>arr.some(k=>t.includes(k));
+  const verbs = ["만들","구현","짜","작성","코딩","고쳐","리팩토","implement","write a","write me","create","build","fix","refactor","optimize","generate"];
+  const nouns = ["함수","코드","알고리즘","정렬","클래스","메서드","버그","function","code","algorithm","sort","class","method","bug","array","parser"];
+  const chat = ["안녕","하이","헬로","반가","고마","감사","ㅋㅋ","ㅎㅎ","누구","뭐해","심심","hi","hello","hey","thanks","bye","who are you"];
+  const q = t.endsWith("?") || has(["뭐야","무엇","어떻게","왜","설명","what is","what's","how","why","explain"]);
+  if(has(chat) && !has(nouns)) return {kind:"chat", reply:_mockChatReply(t)};
+  if(_SCOPE_RE.test(t)) return {kind:"note"};
+  if(q && !has(verbs)) return {kind:"chat", reply:_mockChatReply(t)};
+  const constrained = has(["오름차순","내림차순","ascending","descending","정수","integer","int","float","문자열","string","1부터","1 to","0부터"]);
+  if(!constrained) for(const k of Object.keys(_VAGUE_ASKS)) if(t.includes(k)) return {kind:"ask", asks:_VAGUE_ASKS[k]};
+  return {kind:"code"};
 }
 
 // ── send handler + the continuous feedback loop (T5: the heart) ──────────────────────────────
@@ -532,8 +601,23 @@ function _accumulate(request, summary){
   if(summary && !summary.scope && summary.code) HISTORY.push({request, code:summary.code});
   quickEl.style.display = "flex";
 }
-async function _mockTurn(request, key){   // standalone / fallback path (no backend)
-  const res = await runAgentic(request, MODE, key, HISTORY.slice());
+async function _mockTurn(request, key){   // standalone / fallback path (no backend) — routes like the server
+  const r = _localRoute(request);
+  if(r.kind === "chat"){
+    const m = addMsg("assistant", ""); const b = m.querySelector(".bubble");
+    b.innerHTML = `<span class="simtag">SIM</span>`;
+    const d = document.createElement("div"); d.className = "chatreply"; d.textContent = r.reply; b.appendChild(d);
+    quickEl.style.display = "flex"; return;                               // chat → NO verification label
+  }
+  if(r.kind === "ask"){
+    const m = addMsg("assistant", `<span class="simtag">SIM</span>`);
+    renderAsks(m.querySelector(".bubble"), r.asks); quickEl.style.display = "flex"; return;
+  }
+  if(r.kind === "note"){
+    addMsg("assistant", `<span class="simtag">SIM</span><div class="step"><span class="mk">▢</span>${esc(T("scope_note"))}</div>`);
+    quickEl.style.display = "flex"; return;
+  }
+  const res = await runAgentic(request, MODE, key, HISTORY.slice());       // code → mock pipeline result
   addMsg("assistant", renderAssistant(res, MODE));
   _accumulate(request, res);
 }
