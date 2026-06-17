@@ -63,6 +63,11 @@
   header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px}
   .logo{font-size:22px;font-weight:700;letter-spacing:.5px}
   .logo .dot{color:var(--accent);transition:color .4s ease}
+  .header-right{display:flex;gap:10px;align-items:center}
+  .clear-btn{background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--txt-dim);
+    font-family:var(--font);font-size:12.5px;font-weight:600;padding:7px 14px;cursor:pointer;
+    transition:border-color .25s ease,color .25s ease}
+  .clear-btn:hover{border-color:var(--accent);color:var(--accent)}
   .lang-toggle{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);
     border-radius:999px;padding:3px}
   .lang-toggle button{background:none;border:none;color:var(--txt-dim);font-family:var(--font);
@@ -200,9 +205,12 @@
   <div class="wrap">
     <header>
       <div class="logo">MR<span class="dot">.</span>JEFFREY</div>
-      <div class="lang-toggle" id="langToggle" role="group" aria-label="language / 언어">
-        <button data-lang="ko" class="on" aria-label="한국어">한국어</button>
-        <button data-lang="en" aria-label="English">EN</button>
+      <div class="header-right">
+        <button class="clear-btn" id="clearBtn" data-i18n="clear" aria-label="new chat / 새 대화">새 대화</button>
+        <div class="lang-toggle" id="langToggle" role="group" aria-label="language / 언어">
+          <button data-lang="ko" class="on" aria-label="한국어">한국어</button>
+          <button data-lang="en" aria-label="English">EN</button>
+        </div>
       </div>
     </header>
 
@@ -292,6 +300,7 @@ const I18N = {
     mode_extended_name: "확장",
     mode_extended_desc: "더 깊이 · 더 많이 해결 · 동일하게 정확",
     send: "실행",
+    clear: "새 대화",
     key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
     req_ph: "상상하는 모든 걸 시작해보세요",
     copied: "복사됨",
@@ -344,6 +353,7 @@ const I18N = {
     mode_extended_name: "Extended",
     mode_extended_desc: "Deeper · solves more · equally correct",
     send: "Run",
+    clear: "New chat",
     key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
     req_ph: "Start everything you imagine",
     copied: "Copied",
@@ -716,6 +726,14 @@ msgsEl.addEventListener("click", e=>{
 });
 sendBtn.addEventListener("click", ()=>onSend());
 reqEl.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); onSend(); } });
+// U10 autonomous: auto-grow the textarea as you type longer requests
+reqEl.addEventListener("input", ()=>{ reqEl.style.height = "auto";
+  reqEl.style.height = Math.min(reqEl.scrollHeight, 160) + "px"; });
+// U10 autonomous: clear / new chat (resets the conversation + accumulated history)
+document.getElementById("clearBtn").addEventListener("click", ()=>{
+  msgsEl.innerHTML = ""; HISTORY.length = 0; quickEl.style.display = "none";
+  reqEl.value = ""; reqEl.style.height = "auto"; reqEl.focus();
+});
 // example chips → populate the input (T3.3)
 document.getElementById("exampleChips").addEventListener("click", e=>{
   const c = e.target.closest(".chip"); if(c){ reqEl.value = c.textContent.trim(); reqEl.focus(); }
