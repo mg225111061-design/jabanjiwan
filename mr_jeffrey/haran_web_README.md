@@ -17,6 +17,18 @@ Open `http://localhost:8000`, optionally paste your Claude API key, and start ty
 - **No key →** everything runs as a labeled **SIM** (the flow works offline).
 - **With a key →** real Claude generation + MR.JEFFREY verification (live stages, `LIVE` tag).
 
+## Make this a standalone GitHub repo (4 commands)
+This folder is self-contained. Create the repo on github.com (or `gh repo create mrjeffrey-web --private`),
+then from inside `haran-web/`:
+```
+git init && git add . && git commit -m "MR.JEFFREY web app"
+git branch -M main
+git remote add origin https://github.com/<you>/mrjeffrey-web.git
+git push -u origin main
+```
+(The build environment's GitHub integration can't create repos for you — `403 not accessible by
+integration` — so this one step is yours; everything else is done.)
+
 ## Deploy (your account; commands are exact, nothing guessed)
 The same image deploys unchanged. Two common options:
 
