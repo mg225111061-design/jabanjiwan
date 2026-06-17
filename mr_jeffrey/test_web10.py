@@ -95,8 +95,9 @@ def honesty_tbd():
 
 
 def honesty_no_mirage():
-    mirage = re.compile(r"homolog|persistent\s*homology|\bTDA\b|topological\s*data|quantum|relativ|"
-                        r"fluid\s*dynam|cohomolog|manifold\s*learning", re.I)
+    # NOTE: match the physics term 'relativity', not CSS 'position:relative' (avoid false positives)
+    mirage = re.compile(r"homolog|persistent\s*homology|\bTDA\b|topological\s*data|quantum|relativity|"
+                        r"relativistic|fluid\s*dynam|cohomolog|manifold\s*learning", re.I)
     hits = {f: [m.group(0) for m in mirage.finditer(_read(f))] for f in V_FILES}
     bad = {f: h for f, h in hits.items() if h}
     ok = not bad

@@ -136,9 +136,11 @@
     border-radius:999px;font-family:var(--font);font-size:12.5px;font-weight:700;padding:7px 16px;cursor:pointer}
   .chatreply{font-size:14.5px;line-height:1.55;white-space:pre-wrap}
   .composer{border-top:1px solid var(--line);padding:16px 18px;background:var(--panel-2)}
-  .composer input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line);
-    border-radius:var(--radius-sm);padding:10px 12px;color:var(--txt);font-size:13px;margin-bottom:10px;
-    font-family:var(--font)}
+  .key-row{position:relative;display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .composer input[type=password]{flex:1;background:var(--bg);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:10px 12px;color:var(--txt);font-size:13px;
+    font-family:var(--font);letter-spacing:.12em}
+  .key-status{flex:0 0 auto;font-size:11.5px;font-weight:700;color:var(--ok);white-space:nowrap}
   .composer-row{display:flex;gap:10px}
   .composer textarea{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);
     padding:11px 13px;color:var(--txt);font-size:14.5px;resize:none;min-height:46px;font-family:var(--font)}
@@ -247,9 +249,12 @@
     <section class="card chat">
       <div class="msgs" id="msgs"></div>
       <div class="composer">
-        <input id="keyInput" type="password" autocomplete="off" data-i18n-ph="key_ph"
-               aria-label="Claude API key — entered each time, stored nowhere"
-               placeholder="Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)">
+        <div class="key-row">
+          <input id="keyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
+                 data-i18n-ph="key_ph" aria-label="Claude API key — entered each time, stored nowhere"
+                 placeholder="Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)">
+          <span class="key-status" id="keyStatus" aria-live="polite"></span>
+        </div>
         <div class="composer-row">
           <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" aria-label="instruction / 지시"
                     placeholder="상상하는 모든 걸 시작해보세요"></textarea>
@@ -301,6 +306,7 @@ const I18N = {
     mode_extended_desc: "더 깊이 · 더 많이 해결 · 동일하게 정확",
     send: "실행",
     clear: "새 대화",
+    key_set: "●●●● 입력됨",
     key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
     req_ph: "상상하는 모든 걸 시작해보세요",
     copied: "복사됨",
@@ -354,6 +360,7 @@ const I18N = {
     mode_extended_desc: "Deeper · solves more · equally correct",
     send: "Run",
     clear: "New chat",
+    key_set: "●●●● entered",
     key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
     req_ph: "Start everything you imagine",
     copied: "Copied",
@@ -418,6 +425,9 @@ function refreshDynamic(){
   const tl = document.getElementById("modeTagline");
   if(tl) tl.textContent = (typeof MODE!=="undefined" && MODE==="extended")
     ? T("tagline_extended") : T("tagline_normal");
+  // V4: masked key confirmation — show ●●●● 입력됨 when a key is present (NEVER the plaintext key)
+  const ks = document.getElementById("keyStatus"), ke = document.getElementById("keyInput");
+  if(ks && ke) ks.textContent = ke.value.trim() ? T("key_set") : "";
 }
 document.getElementById("langToggle").addEventListener("click", e=>{
   const b = e.target.closest("button"); if(b) setLang(b.getAttribute("data-lang"));
@@ -742,6 +752,8 @@ document.getElementById("exampleChips").addEventListener("click", e=>{
 quickEl.addEventListener("click", e=>{
   const q = e.target.closest(".qchip"); if(q) onSend(q.textContent.trim());
 });
+// V4: update the masked key confirmation as the user types (value never read into the DOM)
+keyEl.addEventListener("input", refreshDynamic);
 // U6: chips hidden by default; toggle to expand/collapse (less clutter)
 const quickToggle = document.getElementById("quickToggle");
 const qchips = document.getElementById("qchips");

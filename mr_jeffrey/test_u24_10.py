@@ -96,7 +96,8 @@ def honesty_marketing_tbd():
     t = W.html()
     marketing = t.count("marketing copy") >= 2
     tbd = "[TBD: 측정필요]" in t or "[TBD: measure]" in t
-    mirage = not re.search(r"homolog|persistent\s*homology|\bTDA\b|quantum|relativ|fluid\s*dynam|cohomolog",
+    mirage = not re.search(r"homolog|persistent\s*homology|\bTDA\b|quantum|relativity|relativistic|"
+                           r"fluid\s*dynam|cohomolog",   # 'relativity', not CSS 'position:relative'
                            " ".join(_read(f) for f in V_FILES), re.I)
     ok = marketing and tbd and mirage
     check("honesty_marketing_tbd", ok, f"marketing={marketing} tbd={tbd} no_mirage={mirage}")
