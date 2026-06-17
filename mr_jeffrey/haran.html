@@ -85,8 +85,8 @@
     padding:22px}
   /* conversational UI (T4/T5) */
   .chat{padding:0;overflow:hidden}
-  .msgs{min-height:120px;max-height:440px;overflow-y:auto;padding:22px}
-  .msgs:empty::before{content:attr(data-empty);color:var(--txt-faint);font-size:14px}
+  .msgs{min-height:0;max-height:440px;overflow-y:auto;padding:22px}
+  .msgs:empty{padding:0}   /* no conversation yet → collapse (no wasted space above the input) */
   .msg{margin-bottom:18px;display:flex;flex-direction:column;gap:6px}
   .msg .who{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:var(--txt-faint);text-transform:uppercase}
   .bubble{padding:14px 16px;max-width:88%;font-size:14.5px;border-radius:18px}
