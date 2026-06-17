@@ -85,6 +85,20 @@ def redact_key(s: str) -> str:
     return "".join(out)
 
 
+def _friendly_error(e: Exception) -> str:
+    """A user-understandable, KEY-SAFE message for a failed Claude call (U9.3). Never includes the raw
+    SDK message verbatim (avoids any chance of leaking the key); maps common cases to clear text."""
+    name = type(e).__name__
+    low = redact_key(str(e)).lower()
+    if "authentication" in name.lower() or "401" in low or "invalid x-api-key" in low or "api key" in low:
+        return "API 키가 올바르지 않습니다 (invalid API key)."
+    if "ratelimit" in name.lower() or "429" in low or "rate limit" in low:
+        return "요청 한도를 초과했습니다 — 잠시 후 다시 시도해 주세요 (rate limited)."
+    if "connection" in name.lower() or "timeout" in name.lower() or "network" in low:
+        return "네트워크 오류 — 연결을 확인해 주세요 (network error)."
+    return f"Claude 호출에 실패했습니다 (call failed: {name})."   # type only — never the raw message
+
+
 def _mock_generate(prompt: str, model: str, stream: bool,
                    on_delta: Optional[Callable[[str], None]],
                    mock_response: Optional[str]) -> GenResult:
@@ -132,7 +146,7 @@ def _live_generate(prompt: str, api_key: str, model: str, system: Optional[str],
             msg = client.messages.create(**kwargs)
             blocks, usage = msg.content, getattr(msg, "usage", None)
     except Exception as e:   # noqa: BLE001 — normalize SDK errors; never leak the key in the message
-        raise ClaudeError(f"Claude call failed: {type(e).__name__}: {redact_key(str(e))}") from None
+        raise ClaudeError(_friendly_error(e)) from None
     finally:
         # drop the client (and with it the key it captured) as soon as the call is done
         del client

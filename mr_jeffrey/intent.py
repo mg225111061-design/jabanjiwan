@@ -49,6 +49,11 @@ _QUESTION_KW = ["뭐야", "무엇", "뭔지", "어떻게", "왜", "설명", "알
 
 INTENTS = ("CODING", "CHAT", "QUESTION")
 
+# neutral system prompt for the structured (classify/clarity) Claude calls — must NOT be the HARAN-code
+# system prompt, or Claude would return code instead of the requested JSON.
+_CLASSIFY_SYSTEM = ("You are a precise classifier. Reply with ONLY the requested JSON object — no prose, "
+                    "no code, no markdown fences.")
+
 
 @dataclass
 class IntentResult:
@@ -112,7 +117,8 @@ def classify_intent(text: str, api_key: Optional[str] = None, *,
     prompt = ('Classify this user message. Reply ONLY JSON {"is_coding": bool, "confidence": 0..1}. '
               'is_coding=true for requests to write/fix/optimize code; false for smalltalk or questions.\n'
               f"Message: {text}")
-    gen = CA.claude_generate(prompt, api_key, mock_response=mock_response or _CLASSIFY_MOCK)
+    gen = CA.claude_generate(prompt, api_key, system=_CLASSIFY_SYSTEM,
+                             mock_response=mock_response or _CLASSIFY_MOCK)
     obj = _extract_json(gen.text)
     is_coding = bool(obj.get("is_coding", True))      # default true (conservative)
     conf = float(obj.get("confidence", 0.55)) if isinstance(obj.get("confidence", 0.55), (int, float)) else 0.55
@@ -174,7 +180,8 @@ def assess_clarity(request: str, api_key: Optional[str] = None, *,
     prompt = ('Is this coding request specific enough to implement, or are key details missing? Reply '
               'ONLY JSON {"clear": bool, "asks": ["q1","q2"]} (asks = the questions to ask if unclear).\n'
               f"Request: {request}")
-    gen = CA.claude_generate(prompt, api_key, mock_response=mock_response or _CLARITY_MOCK)
+    gen = CA.claude_generate(prompt, api_key, system=_CLASSIFY_SYSTEM,
+                             mock_response=mock_response or _CLARITY_MOCK)
     obj = _extract_json(gen.text)
     clear = bool(obj.get("clear", True))
     asks = [str(a) for a in obj.get("asks", [])] if isinstance(obj.get("asks", []), list) else []
