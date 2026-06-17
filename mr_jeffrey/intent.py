@@ -25,6 +25,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+import agentic as AG
 import claude_agent as CA
 
 # ── U1: keyword signals (local, no LLM) ─────────────────────────────────────────────────────────
@@ -217,3 +218,47 @@ def chat_reply(text: str, api_key: Optional[str] = None, history=None, *,
         gen = CA.claude_generate(text, api_key, system=CHAT_SYSTEM)   # general answer, not HARAN code
         return ChatReply(gen.text, gen.source)
     return ChatReply(mock_response or _canned_chat(text), "mock-sim")
+
+
+# ── U4: unified router ──────────────────────────────────────────────────────────────────────────
+# input → classify → CODING (clear → agentic_code | vague → ask) | CHAT/QUESTION → chat_reply.
+# Whole-program coding asks are out of scope (Rice) → an honest plain reply (NOT a fake verification).
+# keep the keyword set in sync with server._SCOPE_RE.
+_SCOPE_RE = re.compile(r"백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|"
+                       r"결제|payment", re.I)
+SCOPE_REPLY = ("이 요청은 큰 프로그램입니다. MR.JEFFREY는 작은~중간 코드를 *명세 대비* 검증·최적화합니다 "
+               "(Rice: 무에서 전체 생성 불가). 핵심 로직과 명세(ensures)를 주세요. / This is a large "
+               "program — give the core logic + a spec; MR.JEFFREY verifies small~medium code against it.")
+
+
+def is_scope(text: str) -> bool:
+    return bool(_SCOPE_RE.search(text or ""))
+
+
+@dataclass
+class RouteResult:
+    kind: str                          # "code" | "chat" | "ask"
+    intent: str                        # CODING | CHAT | QUESTION
+    request: str
+    source: str
+    verified: bool = False             # True ONLY for a verified coding result; chat/ask = False
+    code_result: object = None         # AgenticResult (kind="code")
+    reply: Optional[str] = None        # (kind="chat")
+    asks: List[str] = field(default_factory=list)  # (kind="ask")
+
+
+def route(text: str, mode: str = "normal", api_key: Optional[str] = None, history=None) -> RouteResult:
+    """U4: classify the message and route it. CODING+clear → run the verified pipeline; CODING+vague →
+    return expected questions; CHAT/QUESTION → a plain (unverified) reply. The `kind` says which."""
+    it = classify_intent(text, api_key)
+    if it.intent == "CODING":
+        if is_scope(text):                                   # whole-program ask → honest scope reply
+            return RouteResult("chat", "CODING", text, "local", verified=False, reply=SCOPE_REPLY)
+        clarity = assess_clarity(text, api_key)
+        if not clarity.clear:                                # missing details → ask first (suggestions)
+            return RouteResult("ask", "CODING", text, clarity.source, verified=False, asks=clarity.asks)
+        res = AG.agentic_code(text, mode, api_key, history=history or [])   # the verified pipeline
+        return RouteResult("code", "CODING", text, res.source, verified=res.converged, code_result=res)
+    # CHAT / QUESTION → plain answer, never verified
+    cr = chat_reply(text, api_key, history)
+    return RouteResult("chat", it.intent, text, cr.source, verified=False, reply=cr.text)

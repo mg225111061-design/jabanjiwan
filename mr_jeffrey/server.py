@@ -26,6 +26,7 @@ from typing import Iterator, List, Optional, Tuple
 import agentic as AG
 import claude_agent as CA
 import haran_cache as HC
+import intent as IN
 
 HARAN_HTML = Path(__file__).with_name("haran.html")
 
@@ -185,6 +186,33 @@ def stream_events(payload: Optional[dict]) -> Iterator[str]:
 # (+ its dependents) re-verifies — so follow-up rounds are perceived-zero. Real measured speedup.
 # ---------------------------------------------------------------------------------------------------
 
+def handle_route(payload: Optional[dict]) -> dict:
+    """U4: classify + route a message → kind-tagged JSON. CODING → verified pipeline (kind='code',
+    carries proof labels); CHAT/QUESTION → plain reply (kind='chat', NO verification label); CODING but
+    vague → expected questions (kind='ask'). LEVEL-1 key: used once, dropped, never stored/logged/echoed."""
+    p = payload or {}
+    text = str(p.get("prompt", "")).strip()
+    mode = p.get("mode", "normal")
+    history = parse_history(p.get("history"))
+    api_key = p.get("apiKey") or None
+    if not text:
+        return {"error": True, "message": "empty prompt"}
+    try:
+        rr = IN.route(text, mode, api_key, history)
+        out = {"kind": rr.kind, "intent": rr.intent, "source": rr.source, "verified": rr.verified}
+        if rr.kind == "code":
+            out["result"] = to_result_dict(rr.code_result)
+        elif rr.kind == "chat":
+            out["reply"] = rr.reply                  # plain answer — NO verification label
+        elif rr.kind == "ask":
+            out["asks"] = rr.asks                    # expected questions (suggestions)
+        return out
+    except Exception as e:   # noqa: BLE001 — never leak the key
+        return {"error": True, "message": f"{type(e).__name__}: {CA.redact_key(str(e))}"}
+    finally:
+        api_key = None
+
+
 def reverify_incremental(prev_src: str, new_src: str) -> dict:
     """Re-verify a follow-up edit incrementally (v21 Merkle cache): returns which functions actually
     re-verified + measured timings/speedup. Unchanged functions are served from cache (not re-proved)."""
@@ -211,10 +239,10 @@ def create_app():
     async def index():                                          # noqa: ANN202
         return HARAN_HTML.read_text(encoding="utf-8")
 
-    @app.post("/api/generate")
+    @app.post("/api/generate")                                 # routes through intent (U4): code|chat|ask
     async def generate(req: Request):                          # noqa: ANN202
         payload = await req.json()
-        return JSONResponse(handle_generate(payload))
+        return JSONResponse(handle_route(payload))
 
     @app.post("/api/stream")                                    # T7: SSE
     async def stream(req: Request):                            # noqa: ANN202
