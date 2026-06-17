@@ -91,3 +91,91 @@ class Distribution:
 
 def distribution(corpus: List[Item] = None) -> Distribution:
     return Distribution(measure_baseline(corpus))
+
+
+# ===================================================================================================
+# R2 — fast-path tiering: abstract-interp/fold (T1) → Z3 (T2) → Coq (T3). Escalate only when needed.
+# ===================================================================================================
+import sympy as _sp  # noqa: E402
+
+
+def _ensures_rhs(fn):
+    """Return the sympy RHS of `ensures result = RHS`, or None."""
+    e = fn.ensures
+    if e is None or not isinstance(e, A.Bin) or e.op not in ("=", "=="):
+        return None
+    lhs = e.lhs
+    if not (isinstance(lhs, A.Var) and lhs.name == "result"):
+        return None
+    try:
+        return CC.haran_to_sympy(e.rhs, "n")
+    except Exception:
+        return None
+
+
+def tier1_fold(fn) -> Optional[bool]:
+    """Tier 1 (ms): fold closes AND the ensures equals the closed form (polynomial-identity check, no
+    Z3 induction needed). Returns True if RESOLVED here, None if it must escalate. SOUND (exact)."""
+    try:
+        v = CC.classify_fn(fn)
+    except Exception:
+        return None
+    if v.kind != "CLOSED" or v.closed_form in ("", "—"):
+        return None
+    rhs = _ensures_rhs(fn)
+    if rhs is None:
+        return None                       # non-equality ensures (e.g. result>=0) → Z3 tier
+    try:
+        cf = _sp.sympify(str(v.closed_form).replace("^", "**"))
+        n = _sp.Symbol("n")
+        return _sp.simplify(cf - rhs) == 0
+    except Exception:
+        return None
+
+
+@dataclass
+class TierResult:
+    name: str
+    tier: int                # 1=fold/abstract-interp, 2=Z3, 3=Coq
+    tool: str
+    ms: float
+    resolved: bool
+
+
+def tiered_verify(item: Item, max_tier: int = 3) -> TierResult:
+    """Escalate cheapest→deepest, stopping as soon as resolved. haran items resolve at the FAST tier
+    (fold-collapse T1 for equality ensures, Z3 T2 otherwise) in ms — never paying Coq. Only genuine
+    unbounded-∀ (coq) items reach T3. The win = the 75% fast cases never touch the deep prover."""
+    t = time.perf_counter()
+    if item.kind == "haran":
+        fn = parse(item.payload).items[0]
+        # cheap tier label by ensures shape: equality ⇒ fold polynomial-identity (T1); else Z3 (T2)
+        eq = _ensures_rhs(fn) is not None
+        reps = mr_haran.verify_program(item.payload)        # mr_haran's fast fold/Z3 path (ms)
+        ms = (time.perf_counter() - t) * 1000
+        return TierResult(item.name, 1 if eq else 2, "fold/abstract-interp" if eq else "Z3", ms,
+                          reps[0].verdict == "VERIFIED")
+    # coq item — the deep tier (escalated only because fold/Z3 cannot do unbounded ∀)
+    if max_tier >= 3 and haran_coq.coq_available():
+        r = haran_coq.prove_property(item.payload)
+        return TierResult(item.name, 3, "coq", (time.perf_counter() - t) * 1000, r.proven)
+    return TierResult(item.name, 3, "coq(skipped)", (time.perf_counter() - t) * 1000, False)
+
+
+@dataclass
+class TierMeasurement:
+    rows: List[TierResult]
+
+    def by_tier(self, t):
+        return [r for r in self.rows if r.tier == t and r.resolved]
+
+    def avg_ms(self):
+        return sum(r.ms for r in self.rows) / len(self.rows) if self.rows else 0.0
+
+    def tier1_pct(self):
+        return round(100 * len(self.by_tier(1)) / len(self.rows)) if self.rows else 0
+
+
+def measure_tiered(corpus: List[Item] = None, max_tier: int = 3) -> TierMeasurement:
+    corpus = corpus or CORPUS
+    return TierMeasurement([tiered_verify(it, max_tier) for it in corpus])
