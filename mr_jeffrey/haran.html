@@ -18,37 +18,46 @@
 <title>MR.JEFFREY</title>
 <style>
   :root{
-    --normal:#4a9eff; --extended:#b06cff;   /* mode accent hues */
-    --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+    --normal:#5b9dff; --extended:#7c4dff;   /* mode accent hues */
     --radius:22px; --radius-sm:14px; --radius-lg:30px;
     --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,Roboto,sans-serif;
     --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
-    /* default palette = NORMAL (cool) until a mode class is applied */
-    --bg:#0a0e16; --panel:#121826; --panel-2:#1a2233; --line:#26304a;
-    --txt:#eef2fb; --txt-dim:#9aa6c2; --txt-faint:#5f6b86; --accent:var(--normal);
+    /* default palette = NORMAL (BLACK) until a mode class is applied */
+    --bg:#0a0a0c; --panel:#141418; --panel-2:#1c1c22; --line:#2a2a32;
+    --txt:#f5f5f7; --txt-dim:#a1a1aa; --txt-faint:#6b6b75; --accent:var(--normal);
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
   }
-  /* ★ T2: two contrasting THEMES (not just accent) — cool↔warm, both Apple-dark, high text contrast ★ */
-  body.mode-normal{   /* cool, crisp — 'fast' */
-    --bg:#0a0e16; --panel:#121826; --panel-2:#1a2233; --line:#26304a;
-    --txt:#eef2fb; --txt-dim:#9aa6c2; --txt-faint:#5f6b86; --accent:var(--normal);
+  /* ★ U8: BLACK (normal/default) ↔ WHITE (extended), with gradient backgrounds + smooth cross-fade ★
+     readability is non-negotiable: black theme = light text, white theme = dark text. */
+  body.mode-normal{   /* BLACK — default, 'fast' */
+    --bg:#0a0a0c; --panel:#141418; --panel-2:#1c1c22; --line:#2a2a32;
+    --txt:#f5f5f7; --txt-dim:#a1a1aa; --txt-faint:#6b6b75; --accent:var(--normal);
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
   }
-  body.mode-extended{ /* warm, deep — 'powerful' */
-    --bg:#0e0a14; --panel:#181020; --panel-2:#21172e; --line:#352843;
-    --txt:#f6eefb; --txt-dim:#bda6c8; --txt-faint:#7a6385; --accent:var(--extended);
+  body.mode-extended{ /* WHITE — 'powerful' (dark text for contrast) */
+    --bg:#ffffff; --panel:#f5f6f9; --panel-2:#eceef3; --line:#d9dce3;
+    --txt:#0c0c0f; --txt-dim:#55555f; --txt-faint:#8a8a94; --accent:var(--extended);
+    --ok:#059669; --warn:#b45309; --bad:#dc2626;
   }
-  /* smooth full-theme morph on mode switch (no flicker) */
+  /* smooth full-theme morph on mode switch (no flicker) — vars tween, gradient layers cross-fade */
   body, .card, .chat, .msgs, .bubble, .code, .composer, .composer input, .composer textarea,
-  .mode-pill, .example, .lang-toggle, .lang-toggle button, .modetag, .hero .mode-tagline{
+  .mode-pill, .lang-toggle, .lang-toggle button, .modetag, .hero .mode-tagline, .chip, .qchip,
+  .asks, .asks-head, .asks-body{
     transition: background-color .5s ease, color .45s ease, border-color .5s ease;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--txt);font-family:var(--font);
-    -webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh;
-    transition:background .5s ease}
-  .backdrop{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.55;
-    transition:background .6s ease;
+  body{background:transparent;color:var(--txt);font-family:var(--font);
+    -webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh}
+  /* two fixed gradient layers cross-fade on mode switch (black↔white gradient transition) */
+  .bg{position:fixed;inset:0;z-index:-2;pointer-events:none;transition:opacity .5s ease}
+  .bg-dark{background:linear-gradient(180deg,#000000 0%,#15151b 60%,#0a0a0c 100%);opacity:1}
+  .bg-light{background:linear-gradient(180deg,#ffffff 0%,#eef0f5 60%,#e7e9ef 100%);opacity:0}
+  body.mode-extended .bg-dark{opacity:0}
+  body.mode-extended .bg-light{opacity:1}
+  /* subtle accent glow on top of the gradient */
+  .backdrop{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;transition:opacity .6s ease;
     background:radial-gradient(58% 46% at 50% -4%,
-      color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%)}
+      color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%)}
   .wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px}
   /* header */
   header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px}
@@ -157,7 +166,7 @@
   .chips .chip:hover{border-color:var(--accent);color:var(--txt);transform:translateY(-1px)}
   .code{font-family:var(--mono);font-size:13.5px;background:var(--panel-2);border:1px solid var(--line);
     border-radius:var(--radius-sm);padding:12px 14px;display:block;white-space:pre-wrap;
-    color:#e6e6ea;line-height:1.55}
+    color:var(--txt);line-height:1.55}
   .tbd{color:var(--warn);font-size:12px;font-family:var(--mono)}
   /* footer note */
   .note{margin-top:34px;font-size:12.5px;color:var(--txt-faint);text-align:center;line-height:1.7}
@@ -185,6 +194,8 @@
 </style>
 </head>
 <body>
+  <div class="bg bg-dark"></div>
+  <div class="bg bg-light"></div>
   <div class="backdrop"></div>
   <div class="wrap">
     <header>

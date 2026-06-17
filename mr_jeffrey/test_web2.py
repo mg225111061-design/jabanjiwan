@@ -48,8 +48,8 @@ def contrasting_colors():
     ok = hues_distinct and bg_diff and panel_diff and txt_diff
     check("contrasting_colors", ok,
           f"hues={hues_distinct} bg={bg_diff} panel={panel_diff} txt={txt_diff}")
-    print(f"      → FULL theme swap: normal bg {_mode_var('normal','--bg',t)} (cool) vs extended "
-          f"{_mode_var('extended','--bg',t)} (warm); panel/txt/accent all shift. "
+    print(f"      → FULL theme swap: normal bg {_mode_var('normal','--bg',t)} (black) vs extended "
+          f"{_mode_var('extended','--bg',t)} (white); panel/txt/accent all shift (see U8 for readability). "
           "[user-confirm: the contrast reads clearly + stays readable]")
 
 
