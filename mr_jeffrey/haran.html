@@ -110,23 +110,17 @@
   .composer button{flex:0 0 auto;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);
     padding:0 24px;font-weight:700;font-size:14px;cursor:pointer;transition:opacity .2s,background .35s ease}
   .composer button:disabled{opacity:.5;cursor:default}
-  /* examples (T3) — big, clear */
-  .examples{margin:56px 0 10px}
-  .examples h2{font-size:13px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
-    color:var(--txt-faint);text-align:center;margin-bottom:24px}
-  .example{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);
-    padding:24px 26px;margin-bottom:18px}
-  .example .row{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
-  .example .row:last-child{margin-bottom:0}
-  .example .label{flex:0 0 96px;font-size:12px;font-weight:600;color:var(--txt-faint);padding-top:11px}
-  .example .val{flex:1;font-size:15px;padding-top:8px}
+  /* example chips (T3.3) — big coding prompts; click to populate the input */
+  .chips-label{text-align:center;font-size:12px;font-weight:700;letter-spacing:1.2px;
+    text-transform:uppercase;color:var(--txt-faint);margin:8px 0 14px}
+  .chips{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:22px}
+  .chips .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+    color:var(--txt-dim);font-family:var(--font);font-size:13.5px;font-weight:600;padding:11px 20px;
+    cursor:pointer;transition:border-color .25s ease,color .25s ease,transform .2s ease}
+  .chips .chip:hover{border-color:var(--accent);color:var(--txt);transform:translateY(-1px)}
   .code{font-family:var(--mono);font-size:13.5px;background:var(--panel-2);border:1px solid var(--line);
     border-radius:var(--radius-sm);padding:12px 14px;display:block;white-space:pre-wrap;
     color:#e6e6ea;line-height:1.55}
-  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;
-    padding:6px 12px;border-radius:999px}
-  .badge.proven{color:var(--ok);background:color-mix(in srgb,var(--ok) 15%,transparent)}
-  .badge.closed{color:var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent)}
   .tbd{color:var(--warn);font-size:12px;font-family:var(--mono)}
   /* footer note */
   .note{margin-top:34px;font-size:12.5px;color:var(--txt-faint);text-align:center;line-height:1.7}
@@ -166,6 +160,14 @@
       </div>
     </div>
 
+    <div class="chips-label" data-i18n="chips_label">예시 — 클릭해서 시작</div>
+    <div class="chips" id="exampleChips">
+      <button class="chip" data-i18n="ex1">실시간 채팅 백엔드 전체</button>
+      <button class="chip" data-i18n="ex2">JWT 인증 REST API 서버</button>
+      <button class="chip" data-i18n="ex3">결제 처리 상태머신</button>
+      <button class="chip" data-i18n="ex4">동시성 안전한 작업 큐</button>
+    </div>
+
     <section class="card chat">
       <div class="msgs" id="msgs" data-i18n-empty="chat_empty"
            data-empty="대화를 시작해 보세요. 예: “1부터 n까지의 합”"></div>
@@ -179,47 +181,6 @@
       </div>
     </section>
 
-    <section class="examples">
-      <h2 data-i18n="ex_title">예시</h2>
-
-      <div class="example">
-        <div class="row"><div class="label" data-i18n="ex_req">요청</div>
-          <div class="val">“1부터 n까지 더해줘”</div></div>
-        <div class="row"><div class="label" data-i18n="ex_writes">Claude 작성</div>
-          <div class="val"><span class="code">fn sum(n: Nat) -> Nat
-  ensures result = n*(n+1)/2
-{ fold k in 1..n { k } }</span></div></div>
-        <div class="row"><div class="label" data-i18n="ex_verdict">HARAN 검증</div>
-          <div class="val"><span class="badge proven">✓ PROVEN ∀</span></div></div>
-        <div class="row"><div class="label" data-i18n="ex_optimized">수학적 최적화</div>
-          <div class="val"><span class="badge closed">n·(n+1)/2 · O(1)</span>
-            <span class="tbd"> · ×N [TBD: 측정필요]</span></div></div>
-      </div>
-
-      <div class="example">
-        <div class="row"><div class="label" data-i18n="ex_req">요청</div>
-          <div class="val">“홀수들의 합”</div></div>
-        <div class="row"><div class="label" data-i18n="ex_writes">Claude 작성</div>
-          <div class="val"><span class="code">fn odds(n: Nat) -> Nat
-  ensures result = n*n
-{ fold k in 1..n { 2*k - 1 } }</span></div></div>
-        <div class="row"><div class="label" data-i18n="ex_verdict">HARAN 검증</div>
-          <div class="val"><span class="badge proven">✓ PROVEN ∀</span></div></div>
-        <div class="row"><div class="label" data-i18n="ex_optimized">수학적 최적화</div>
-          <div class="val"><span class="badge closed">n² · O(1)</span>
-            <span class="tbd"> · ×N [TBD: 측정필요]</span></div></div>
-      </div>
-
-      <div class="example">
-        <div class="row"><div class="label" data-i18n="ex_req">요청</div>
-          <div class="val">“합인데 — 첫 시도가 틀렸을 때”</div></div>
-        <div class="row"><div class="label" data-i18n="ex_writes">Claude 작성</div>
-          <div class="val"><span class="code">{ fold k in 1..n { k + 1 } }   ✗</span></div></div>
-        <div class="row"><div class="label" data-i18n="ex_verdict">HARAN 검증</div>
-          <div class="val">반례 / counterexample <span class="code">n=1 → 2 ≠ 1</span>
-            → 재작성 → <span class="badge proven">✓ PROVEN ∀</span></div></div>
-      </div>
-    </section>
 
     <p class="note">
       <span data-i18n="note_key">API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).</span><br>
@@ -236,11 +197,12 @@ const I18N = {
     hero: "Claude가 코드를 짜고, 수학적으로 속도와 코드 품질을 끌어올리는 특수 제작 모델이 작동합니다.",
     sub: "현존하는 모든 AI 대비 압도적인 속도와 정확성.",
     compare: "Codex와 Claude는 평균적으로 이보다 [TBD: 측정필요]% 느린 코드를 생성합니다.",
-    ex_title: "예시",
-    ex_req: "요청",
-    ex_writes: "Claude 작성",
-    ex_verdict: "HARAN 검증",
-    ex_optimized: "수학적 최적화",
+    chips_label: "예시 — 클릭해서 시작",
+    ex1: "실시간 채팅 백엔드 전체",
+    ex2: "JWT 인증 REST API 서버",
+    ex3: "결제 처리 상태머신",
+    ex4: "동시성 안전한 작업 큐",
+    scope_note: "이 요청은 큰 프로그램입니다. HARAN은 작은~중간 코드를 *명세 대비* 검증·최적화합니다 (Rice: 무에서 전체 생성은 불가). 핵심 로직과 명세(ensures)를 주시면 증명합니다.",
     placeholder: "대화형 인터페이스가 여기에 들어갑니다.",
     mode_normal_name: "일반",
     mode_normal_desc: "빠른 속도 · 흔한 경우 · 절대 틀리지 않음",
@@ -269,11 +231,12 @@ const I18N = {
     hero: "Claude writes the code; a purpose-built model mathematically raises its speed and quality.",
     sub: "Overwhelming speed and accuracy versus every AI in existence.",
     compare: "Codex and Claude generate code on average [TBD: measure] % slower than this.",
-    ex_title: "Examples",
-    ex_req: "Request",
-    ex_writes: "Claude writes",
-    ex_verdict: "HARAN verifies",
-    ex_optimized: "Mathematical optimization",
+    chips_label: "Examples — click to start",
+    ex1: "A full real-time chat backend",
+    ex2: "JWT-authenticated REST API server",
+    ex3: "Payment processing state machine",
+    ex4: "Concurrency-safe job queue",
+    scope_note: "This is a large program. HARAN verifies & optimizes small-to-medium code *against a spec* (Rice: full generation from nothing is impossible). Give the core logic + a spec (ensures) and it proves it.",
     placeholder: "The conversational interface goes here.",
     mode_normal_name: "Normal",
     mode_normal_desc: "Fast · common case · never wrong",
@@ -358,6 +321,14 @@ function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;"
 function mockAgentic(request, mode){
   const _t0 = performance.now();
   const r = (request || "").toLowerCase();
+  // ★ scope/intent-gap honesty (rule 5): big whole-program requests can't be generated from nothing
+  //   (Rice). HARAN verifies small~medium code AGAINST A SPEC. Say so — never fake-verify a backend. ★
+  if(/백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|결제|payment/i.test(r)
+     || (request || "").length > 40){
+    return {source:"mock-sim", scope:true, converged:false, status:"SCOPE", proof_tier:"(scope)",
+            code:null, closed:null, speedup:"none", iters:0, trace:[],
+            sim_ms: Math.max(0.1, performance.now() - _t0).toFixed(1)};
+  }
   let ex;
   if(/홀수|odd/.test(r))
     ex = {code:"fn odds(n: Nat) -> Nat\n  ensures result = n*n\n{ fold k in 1..n { 2*k - 1 } }",
@@ -397,6 +368,10 @@ function addMsg(role, inner){
 function renderAssistant(res, mode){
   const sim = res.source === "mock-sim" ? `<span class="simtag">SIM</span>` : "";
   const tag = `<span class="modetag">${esc(mode==="extended"?T("asst_extended"):T("asst_normal"))}</span>${sim}`;
+  if(res.scope){
+    // honest scope/intent-gap response (same in both modes) — NOT a fake verification
+    return `${tag}<div class="step"><span class="mk">▢</span>${esc(T("scope_note"))}</div>`;
+  }
   const code = `<div class="step"><span class="code">${esc(res.code)}</span></div>`;
   if(mode === "normal"){
     // NORMAL: SPEED framing — fast verdict, defers the deep proof/optimization (honest: not wrong, shallow).
@@ -445,6 +420,10 @@ async function onSend(){
 }
 sendBtn.addEventListener("click", onSend);
 reqEl.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); onSend(); } });
+// example chips → populate the input (T3.3)
+document.getElementById("exampleChips").addEventListener("click", e=>{
+  const c = e.target.closest(".chip"); if(c){ reqEl.value = c.textContent.trim(); reqEl.focus(); }
+});
 
 // ── init (runs after all definitions) ───────────────────────────────────────────────────────
 (function init(){
