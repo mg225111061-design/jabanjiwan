@@ -69,6 +69,24 @@
   /* generic rounded panels */
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
     padding:22px}
+  /* examples (T3) — big, clear */
+  .examples{margin:56px 0 10px}
+  .examples h2{font-size:13px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
+    color:var(--txt-faint);text-align:center;margin-bottom:24px}
+  .example{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);
+    padding:24px 26px;margin-bottom:18px}
+  .example .row{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
+  .example .row:last-child{margin-bottom:0}
+  .example .label{flex:0 0 96px;font-size:12px;font-weight:600;color:var(--txt-faint);padding-top:11px}
+  .example .val{flex:1;font-size:15px;padding-top:8px}
+  .code{font-family:var(--mono);font-size:13.5px;background:var(--panel-2);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:12px 14px;display:block;white-space:pre-wrap;
+    color:#e6e6ea;line-height:1.55}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;
+    padding:6px 12px;border-radius:999px}
+  .badge.proven{color:var(--ok);background:color-mix(in srgb,var(--ok) 15%,transparent)}
+  .badge.closed{color:var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent)}
+  .tbd{color:var(--warn);font-size:12px;font-family:var(--mono)}
   /* footer note */
   .note{margin-top:34px;font-size:12.5px;color:var(--txt-faint);text-align:center;line-height:1.7}
   .note code{font-family:var(--mono);color:var(--txt-dim)}
@@ -86,9 +104,9 @@
     </header>
 
     <section class="hero">
-      <!-- copy is finalized in T3; placeholder here -->
-      <h1 data-i18n="hero">코드를 짜고, 수학적으로 검증합니다.</h1>
-      <p class="sub" data-i18n="sub">Claude가 작성하고 HARAN이 증명합니다.</p>
+      <!-- marketing copy (abstract advertising; NOT a measured claim — see I18N) -->
+      <h1 data-i18n="hero">Claude가 코드를 짜고, 수학적으로 속도와 코드 품질을 끌어올리는 특수 제작 모델이 작동합니다.</h1>
+      <p class="sub" data-i18n="sub">현존하는 모든 AI 대비 압도적인 속도와 정확성.</p>
     </section>
 
     <div class="mode-select" id="modeSelect">
@@ -106,6 +124,48 @@
       <p data-i18n="placeholder" style="color:var(--txt-dim)">대화형 인터페이스가 여기에 들어갑니다.</p>
     </section>
 
+    <section class="examples">
+      <h2 data-i18n="ex_title">예시</h2>
+
+      <div class="example">
+        <div class="row"><div class="label" data-i18n="ex_req">요청</div>
+          <div class="val">“1부터 n까지 더해줘”</div></div>
+        <div class="row"><div class="label" data-i18n="ex_writes">Claude 작성</div>
+          <div class="val"><span class="code">fn sum(n: Nat) -> Nat
+  ensures result = n*(n+1)/2
+{ fold k in 1..n { k } }</span></div></div>
+        <div class="row"><div class="label" data-i18n="ex_verdict">HARAN 검증</div>
+          <div class="val"><span class="badge proven">✓ PROVEN ∀</span></div></div>
+        <div class="row"><div class="label" data-i18n="ex_optimized">수학적 최적화</div>
+          <div class="val"><span class="badge closed">n·(n+1)/2 · O(1)</span>
+            <span class="tbd"> · ×N [TBD: 측정필요]</span></div></div>
+      </div>
+
+      <div class="example">
+        <div class="row"><div class="label" data-i18n="ex_req">요청</div>
+          <div class="val">“홀수들의 합”</div></div>
+        <div class="row"><div class="label" data-i18n="ex_writes">Claude 작성</div>
+          <div class="val"><span class="code">fn odds(n: Nat) -> Nat
+  ensures result = n*n
+{ fold k in 1..n { 2*k - 1 } }</span></div></div>
+        <div class="row"><div class="label" data-i18n="ex_verdict">HARAN 검증</div>
+          <div class="val"><span class="badge proven">✓ PROVEN ∀</span></div></div>
+        <div class="row"><div class="label" data-i18n="ex_optimized">수학적 최적화</div>
+          <div class="val"><span class="badge closed">n² · O(1)</span>
+            <span class="tbd"> · ×N [TBD: 측정필요]</span></div></div>
+      </div>
+
+      <div class="example">
+        <div class="row"><div class="label" data-i18n="ex_req">요청</div>
+          <div class="val">“합인데 — 첫 시도가 틀렸을 때”</div></div>
+        <div class="row"><div class="label" data-i18n="ex_writes">Claude 작성</div>
+          <div class="val"><span class="code">{ fold k in 1..n { k + 1 } }   ✗</span></div></div>
+        <div class="row"><div class="label" data-i18n="ex_verdict">HARAN 검증</div>
+          <div class="val">반례 / counterexample <span class="code">n=1 → 2 ≠ 1</span>
+            → 재작성 → <span class="badge proven">✓ PROVEN ∀</span></div></div>
+      </div>
+    </section>
+
     <p class="note">
       <span data-i18n="note_key">API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).</span><br>
       <span data-i18n="note_confirm">화면의 시각·체감은 사용자 확인이 필요합니다.</span>
@@ -117,8 +177,14 @@
 // ── i18n (T1): Korean / English, switched live ──────────────────────────────────────────────
 const I18N = {
   ko: {
-    hero: "코드를 짜고, 수학적으로 검증합니다.",
-    sub: "Claude가 작성하고 HARAN이 증명합니다.",
+    // marketing copy — abstract advertising, NEVER mixed with measured results (PROVEN/ms).
+    hero: "Claude가 코드를 짜고, 수학적으로 속도와 코드 품질을 끌어올리는 특수 제작 모델이 작동합니다.",
+    sub: "현존하는 모든 AI 대비 압도적인 속도와 정확성.",
+    ex_title: "예시",
+    ex_req: "요청",
+    ex_writes: "Claude 작성",
+    ex_verdict: "HARAN 검증",
+    ex_optimized: "수학적 최적화",
     placeholder: "대화형 인터페이스가 여기에 들어갑니다.",
     mode_normal_name: "일반",
     mode_normal_desc: "빠른 속도 · 흔한 경우 · 절대 틀리지 않음",
@@ -128,8 +194,14 @@ const I18N = {
     note_confirm: "화면의 시각·체감은 사용자 확인이 필요합니다.",
   },
   en: {
-    hero: "It writes code, and verifies it mathematically.",
-    sub: "Claude writes; HARAN proves.",
+    // marketing copy — abstract advertising, NEVER mixed with measured results (PROVEN/ms).
+    hero: "Claude writes the code; a purpose-built model mathematically raises its speed and quality.",
+    sub: "Overwhelming speed and accuracy versus every AI in existence.",
+    ex_title: "Examples",
+    ex_req: "Request",
+    ex_writes: "Claude writes",
+    ex_verdict: "HARAN verifies",
+    ex_optimized: "Mathematical optimization",
     placeholder: "The conversational interface goes here.",
     mode_normal_name: "Normal",
     mode_normal_desc: "Fast · common case · never wrong",
