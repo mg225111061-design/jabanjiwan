@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<!--
+  HARAN — conversational verified-coding web product (v23 / Part T).
+  Single self-contained file (HTML+CSS+JS). Apple-dark aesthetic. Works standalone (built-in mock)
+  and calls the FastAPI backend (server.py) when one is reachable.
+
+  ★ HONESTY NOTES baked into the source ★
+  • Marketing copy (abstract advertising like "압도적인…") is tagged `// marketing copy` and is NEVER
+    mixed with HARAN's real measured results (PROVEN / REFUTED / measured ms).
+  • API key is LEVEL 1: typed every time, kept only in a JS variable for the single request, sent over
+    the wire to the user's own backend, and never written to localStorage / cookies / logs.
+  • The screen's look & feel is a USER-CONFIRMATION subject — automated tests check structure, not visuals.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HARAN</title>
+<style>
+  :root{
+    --bg:#0a0a0c; --panel:#141417; --panel-2:#1c1c21; --line:#2a2a31;
+    --txt:#f5f5f7; --txt-dim:#a1a1aa; --txt-faint:#6b6b75;
+    /* two-mode accents (contrast lands in T2) */
+    --normal:#4a9eff; --extended:#b06cff; --accent:var(--normal);
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
+    --radius:22px; --radius-sm:14px; --radius-lg:30px;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,Roboto,sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--font);
+    -webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh}
+  .wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px}
+  /* header */
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px}
+  .logo{font-size:22px;font-weight:700;letter-spacing:.5px}
+  .logo .dot{color:var(--accent);transition:color .4s ease}
+  .lang-toggle{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:3px}
+  .lang-toggle button{background:none;border:none;color:var(--txt-dim);font-family:var(--font);
+    font-size:13px;font-weight:600;padding:6px 14px;border-radius:999px;cursor:pointer;
+    transition:all .25s ease}
+  .lang-toggle button.on{background:var(--accent);color:#fff}
+  /* hero */
+  .hero{text-align:center;padding:30px 0 44px}
+  .hero h1{font-size:34px;font-weight:700;line-height:1.3;letter-spacing:-.5px;
+    max-width:760px;margin:0 auto 18px}
+  .hero p.sub{font-size:18px;color:var(--txt-dim);max-width:600px;margin:0 auto}
+  /* generic rounded panels */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px}
+  /* footer note */
+  .note{margin-top:34px;font-size:12.5px;color:var(--txt-faint);text-align:center;line-height:1.7}
+  .note code{font-family:var(--mono);color:var(--txt-dim)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">HARAN<span class="dot">.</span></div>
+      <div class="lang-toggle" id="langToggle">
+        <button data-lang="ko" class="on">한국어</button>
+        <button data-lang="en">EN</button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <!-- copy is finalized in T3; placeholder here -->
+      <h1 data-i18n="hero">코드를 짜고, 수학적으로 검증합니다.</h1>
+      <p class="sub" data-i18n="sub">Claude가 작성하고 HARAN이 증명합니다.</p>
+    </section>
+
+    <section class="card">
+      <p data-i18n="placeholder" style="color:var(--txt-dim)">대화형 인터페이스가 여기에 들어갑니다.</p>
+    </section>
+
+    <p class="note">
+      <span data-i18n="note_key">API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).</span><br>
+      <span data-i18n="note_confirm">화면의 시각·체감은 사용자 확인이 필요합니다.</span>
+    </p>
+  </div>
+
+<script>
+"use strict";
+// ── i18n (T1): Korean / English, switched live ──────────────────────────────────────────────
+const I18N = {
+  ko: {
+    hero: "코드를 짜고, 수학적으로 검증합니다.",
+    sub: "Claude가 작성하고 HARAN이 증명합니다.",
+    placeholder: "대화형 인터페이스가 여기에 들어갑니다.",
+    note_key: "API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).",
+    note_confirm: "화면의 시각·체감은 사용자 확인이 필요합니다.",
+  },
+  en: {
+    hero: "It writes code, and verifies it mathematically.",
+    sub: "Claude writes; HARAN proves.",
+    placeholder: "The conversational interface goes here.",
+    note_key: "Your API key is entered each time and stored nowhere (level 1).",
+    note_confirm: "The screen's look & feel needs user confirmation.",
+  },
+};
+let LANG = "ko";
+function setLang(lang){
+  if(!I18N[lang]) return;
+  LANG = lang;
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const k = el.getAttribute("data-i18n");
+    if(I18N[lang][k] !== undefined) el.textContent = I18N[lang][k];
+  });
+  document.querySelectorAll("#langToggle button").forEach(b=>{
+    b.classList.toggle("on", b.getAttribute("data-lang")===lang);
+  });
+}
+document.getElementById("langToggle").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(b) setLang(b.getAttribute("data-lang"));
+});
+setLang("ko");
+</script>
+</body>
+</html>
