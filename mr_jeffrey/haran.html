@@ -119,10 +119,18 @@
   .composer button{flex:0 0 auto;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);
     padding:0 24px;font-weight:700;font-size:14px;cursor:pointer;transition:opacity .2s,background .35s ease}
   .composer button:disabled{opacity:.5;cursor:default}
-  /* quick-action follow-ups (T5) */
-  .quick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
-  .quick-label{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--txt-faint);
-    text-transform:uppercase;margin-right:4px}
+  /* quick-action follow-ups (T5 + U6: hidden by default, toggle to expand) */
+  .quick{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  .quick-toggle{align-self:flex-start;background:transparent;border:1px solid var(--line);
+    border-radius:999px;color:var(--txt-faint);font-family:var(--font);font-size:11px;font-weight:700;
+    letter-spacing:.6px;text-transform:uppercase;padding:6px 14px;cursor:pointer;
+    transition:border-color .25s ease,color .25s ease}
+  .quick-toggle:hover{border-color:var(--accent);color:var(--accent)}
+  .quick-toggle .arr{display:inline-block;margin-left:6px;transition:transform .25s ease}
+  .quick-toggle.open .arr{transform:rotate(180deg)}
+  .qchips{display:flex;flex-wrap:wrap;gap:8px;max-height:0;opacity:0;overflow:hidden;
+    transition:max-height .3s ease,opacity .3s ease}
+  .qchips.open{max-height:240px;opacity:1}
   .qchip{background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--txt-dim);
     font-family:var(--font);font-size:12.5px;font-weight:600;padding:7px 14px;cursor:pointer;
     transition:border-color .25s ease,color .25s ease}
@@ -218,12 +226,20 @@
         </div>
         <!-- quick-action follow-ups (T5.3): appear after the first result; each is a follow-up instruction -->
         <div class="quick" id="quickActions" style="display:none">
-          <span class="quick-label" data-i18n="quick_label">빠른 지시</span>
-          <button class="qchip" data-i18n="qa_faster">더 빠르게</button>
-          <button class="qchip" data-i18n="qa_bug">버그 고쳐</button>
-          <button class="qchip" data-i18n="qa_test">테스트 추가</button>
-          <button class="qchip" data-i18n="qa_edge">엣지 케이스</button>
-          <button class="qchip" data-i18n="qa_refactor">리팩토링</button>
+          <button class="quick-toggle" id="quickToggle" aria-expanded="false" aria-label="quick actions / 빠른 지시">
+            <span data-i18n="quick_label">빠른 지시</span><span class="arr">▾</span>
+          </button>
+          <div class="qchips" id="qchips">
+            <button class="qchip" data-i18n="qa_faster">더 빠르게</button>
+            <button class="qchip" data-i18n="qa_bug">버그 고쳐</button>
+            <button class="qchip" data-i18n="qa_test">테스트 추가</button>
+            <button class="qchip" data-i18n="qa_edge">엣지 케이스</button>
+            <button class="qchip" data-i18n="qa_refactor">리팩토링</button>
+            <button class="qchip" data-i18n="qa_comment">주석 추가</button>
+            <button class="qchip" data-i18n="qa_simpler">더 간단하게</button>
+            <button class="qchip" data-i18n="qa_explain">설명해줘</button>
+            <button class="qchip" data-i18n="qa_safer">더 안전하게</button>
+          </div>
         </div>
       </div>
     </section>
@@ -262,6 +278,10 @@ const I18N = {
     qa_test: "테스트 추가",
     qa_edge: "엣지 케이스",
     qa_refactor: "리팩토링",
+    qa_comment: "주석 추가",
+    qa_simpler: "더 간단하게",
+    qa_explain: "설명해줘",
+    qa_safer: "더 안전하게",
     you: "당신",
     tagline_normal: "가장 빠르게 — 즉각 생성",
     tagline_extended: "가장 강력하게 — 깊은 검증과 최적화",
@@ -308,6 +328,10 @@ const I18N = {
     qa_test: "Add tests",
     qa_edge: "Edge cases",
     qa_refactor: "Refactor",
+    qa_comment: "Add comments",
+    qa_simpler: "Simpler",
+    qa_explain: "Explain it",
+    qa_safer: "Safer",
     you: "You",
     tagline_normal: "The fastest — instant generation",
     tagline_extended: "The most powerful — deep verification & optimization",
@@ -663,6 +687,14 @@ document.getElementById("exampleChips").addEventListener("click", e=>{
 // quick-action chips → send as a follow-up instruction (T5.3)
 quickEl.addEventListener("click", e=>{
   const q = e.target.closest(".qchip"); if(q) onSend(q.textContent.trim());
+});
+// U6: chips hidden by default; toggle to expand/collapse (less clutter)
+const quickToggle = document.getElementById("quickToggle");
+const qchips = document.getElementById("qchips");
+quickToggle.addEventListener("click", ()=>{
+  const open = qchips.classList.toggle("open");
+  quickToggle.classList.toggle("open", open);
+  quickToggle.setAttribute("aria-expanded", open ? "true" : "false");
 });
 
 // ── init (runs after all definitions) ───────────────────────────────────────────────────────
