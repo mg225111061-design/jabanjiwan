@@ -131,7 +131,12 @@ def lower(e, ctx: Ctx) -> str:
             ctx.lines.append("}")
             first = False
         return res
-    raise CodegenError(f"cannot lower {type(e).__name__}")
+    # W4: categorize the failure clearly — interpreter-domain (future) vs genuinely unknown node
+    nm = type(e).__name__
+    if nm in ("ListLit", "Lambda", "Ctor", "Yield", "Cofix", "Quant"):
+        raise CodegenError(f"cannot lower {nm} (interpreter-domain: executes via the interpreter; "
+                           f"native codegen is future work, not a ceiling)")
+    raise CodegenError(f"cannot lower {nm} (unsupported expression node)")
 
 
 def _pat_cond(pat, scr) -> str:

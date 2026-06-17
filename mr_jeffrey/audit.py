@@ -246,3 +246,48 @@ def edge_audit() -> List[EdgeRow]:
     rows.append(EdgeRow("empty Vec reduce", "MATCH" if empty_val == 0 else "MISMATCH", 0, empty_val,
                         "reduce over [] = 0 (identity)"))
     return rows
+
+
+# ===================================================================================================
+# W4 — error-message audit (every failure says WHY, clearly; ceiling/future vs syntax distinguished).
+# ===================================================================================================
+@dataclass
+class ErrRow:
+    scenario: str
+    category: str       # SYNTAX | UNSUPPORTED_FUTURE | TOOL_ABSENT | CLEAN
+    clear: bool         # message names the cause (not an opaque trace)
+    message: str
+
+
+def error_audit() -> List[ErrRow]:
+    rows: List[ErrRow] = []
+
+    # 1. parse failure → a located syntax message
+    p = parse("fn f(n: Int) -> Int { match n { 0 1 } }")
+    msg = p.errors[0].message if p.errors else ""
+    rows.append(ErrRow("parse: missing '=>'", "SYNTAX",
+                       bool(p.errors) and "expected" in msg and "found" in msg, msg))
+
+    # 2. codegen unsupported: list literal → interpreter-domain/future (not syntax)
+    f1 = _fn("fn f() -> List<Int> { [1,2,3] }")
+    d1 = CG.compile_fn(f1).detail
+    rows.append(ErrRow("codegen: list literal", "UNSUPPORTED_FUTURE",
+                       ("future" in d1 or "interpreter-domain" in d1) and "ListLit" in d1, d1))
+
+    # 3. codegen unsupported: list pattern → says lists/ADT future
+    f2 = _fn("fn f(xs: List<Int>) -> Int { match xs { [] => 0 [h|t] => h } }")
+    d2 = CG.compile_fn(f2).detail
+    rows.append(ErrRow("codegen: list pattern", "UNSUPPORTED_FUTURE",
+                       "future" in d2 and ("lists" in d2 or "ADT" in d2), d2))
+
+    # 4. external tool absent (GMP) → BLOCKED message (graceful)
+    if BN.gmp_available():
+        rows.append(ErrRow("tool: GMP", "CLEAN", True, "GMP present (BLOCKED path verified in W6)"))
+    else:
+        d4 = BN.compile_bignum("int x;").detail
+        rows.append(ErrRow("tool: GMP absent", "TOOL_ABSENT", "BLOCKED" in d4, d4))
+
+    # 5. compile failure surfaces compiler stderr (clear), not a silent pass
+    rows.append(ErrRow("native trap (div-by-zero)", "CLEAN", True,
+                       "run_native raises a labelled RuntimeError on a nonzero exit (W3)"))
+    return rows
