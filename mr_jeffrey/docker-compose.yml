@@ -1,0 +1,16 @@
+# Local-only run (you, now, free):  docker compose up  →  http://localhost:8000
+# Everything is env-driven; no code change needed to deploy later.
+services:
+  haran:
+    build:
+      context: .
+      args:
+        INSTALL_COQ: "false"          # set "true" for unbounded-∀ proofs (heavier image)
+    ports:
+      - "${HARAN_PORT:-8000}:8000"
+    environment:
+      HARAN_HOST: "0.0.0.0"
+      HARAN_PORT: "8000"
+      HARAN_MODE: "${HARAN_MODE:-normal}"
+    # ★ No API key here, ever — it is entered per request in the UI, used once, dropped (level-1). ★
+    restart: unless-stopped

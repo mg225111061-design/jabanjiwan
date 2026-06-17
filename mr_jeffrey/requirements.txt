@@ -1,0 +1,8 @@
+# HARAN web backend runtime deps. (Coq, if wanted for unbounded-∀ proofs, is a system package — see
+# Dockerfile INSTALL_COQ; it is NOT a pip dep.) The Claude API key is NEVER a dependency or env var —
+# it is entered per request in the UI (level-1).
+fastapi>=0.110
+uvicorn[standard]>=0.27
+anthropic>=0.40
+sympy>=1.12
+z3-solver>=4.12
