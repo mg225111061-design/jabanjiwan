@@ -81,10 +81,12 @@ def _obj_block(name: str, text: str) -> str:
 
 
 def i18n_keys(lang: str, text: str | None = None) -> set:
-    """Keys defined for a language inside the I18N object (e.g. i18n_keys('ko'))."""
+    """Keys defined for a language inside the I18N object (e.g. i18n_keys('ko')). Match only true
+    object keys — those at the start of a line (after indentation) — so colons inside string VALUES
+    (e.g. '선택:', '[TBD: …]', 'optional:') are not mistaken for keys."""
     t = text if text is not None else html()
     block = _obj_block(lang, t)
-    return set(re.findall(r"(\w+)\s*:", block))
+    return set(re.findall(r"(?m)^\s*(\w+)\s*:", block))
 
 
 def data_i18n_keys(text: str | None = None) -> set:
@@ -93,26 +95,10 @@ def data_i18n_keys(text: str | None = None) -> set:
 
 
 def js_balanced(text: str | None = None) -> bool:
-    """Cheap JS sanity: braces/parens/brackets balance across the file (catches truncation)."""
+    """Cheap 'not truncated' check: each bracket pair occurs an equal number of times across the file.
+    Count-based (not a stack) so it does not choke on regex literals (e.g. /[&<>"]/g) or quote chars
+    inside strings — those defeat a naive char scanner but keep their own brackets balanced here."""
     t = text if text is not None else html()
-    pairs = {")": "(", "]": "[", "}": "{"}
-    stack = []
-    in_str = None
-    esc = False
-    for ch in t:
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == in_str:
-                in_str = None
-            continue
-        if ch in "\"'`":
-            in_str = ch
-        elif ch in "([{":
-            stack.append(ch)
-        elif ch in ")]}":
-            if not stack or stack.pop() != pairs[ch]:
-                return False
-    return not stack
+    return (t.count("{") == t.count("}")
+            and t.count("(") == t.count(")")
+            and t.count("[") == t.count("]"))

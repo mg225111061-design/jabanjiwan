@@ -54,6 +54,9 @@
   .hero h1{font-size:34px;font-weight:700;line-height:1.3;letter-spacing:-.5px;
     max-width:760px;margin:0 auto 18px}
   .hero p.sub{font-size:18px;color:var(--txt-dim);max-width:600px;margin:0 auto}
+  .hero .mode-tagline{margin-top:18px;font-size:14px;font-weight:600;color:var(--accent);
+    letter-spacing:.2px;transition:color .45s ease}
+  .hero .compare{margin-top:10px;font-size:13px;color:var(--txt-faint)}
   /* mode selector (T2) — click to switch; colors + lift transition */
   .mode-select{display:flex;gap:12px;justify-content:center;margin-bottom:30px;flex-wrap:wrap}
   .mode-pill{flex:0 1 210px;text-align:left;cursor:pointer;background:var(--panel);
@@ -69,6 +72,33 @@
   /* generic rounded panels */
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
     padding:22px}
+  /* conversational UI (T4/T5) */
+  .chat{padding:0;overflow:hidden}
+  .msgs{min-height:120px;max-height:440px;overflow-y:auto;padding:22px}
+  .msgs:empty::before{content:attr(data-empty);color:var(--txt-faint);font-size:14px}
+  .msg{margin-bottom:18px;display:flex;flex-direction:column;gap:6px}
+  .msg .who{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:var(--txt-faint);text-transform:uppercase}
+  .bubble{padding:14px 16px;max-width:88%;font-size:14.5px;border-radius:18px}
+  .msg.user{align-items:flex-end}
+  .msg.user .bubble{background:var(--accent);color:#fff;border-radius:18px 18px 4px 18px;transition:background .35s ease}
+  .msg.assistant .bubble{background:var(--panel-2);border:1px solid var(--line);border-radius:18px 18px 18px 4px}
+  .modetag{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;
+    color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);margin-bottom:8px;
+    transition:color .35s ease,background .35s ease}
+  .simtag{font-size:10.5px;color:var(--warn);font-family:var(--mono);margin-left:8px}
+  .step{font-size:12.5px;color:var(--txt-dim);font-family:var(--mono);padding:3px 0;display:flex;gap:8px}
+  .step .mk{flex:0 0 auto}
+  .step.bad .mk{color:var(--bad)} .step.good .mk{color:var(--ok)}
+  .composer{border-top:1px solid var(--line);padding:16px 18px;background:var(--panel-2)}
+  .composer input[type=password]{width:100%;background:var(--bg);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:10px 12px;color:var(--txt);font-size:13px;margin-bottom:10px;
+    font-family:var(--font)}
+  .composer-row{display:flex;gap:10px}
+  .composer textarea{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);
+    padding:11px 13px;color:var(--txt);font-size:14.5px;resize:none;min-height:46px;font-family:var(--font)}
+  .composer button{flex:0 0 auto;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);
+    padding:0 24px;font-weight:700;font-size:14px;cursor:pointer;transition:opacity .2s,background .35s ease}
+  .composer button:disabled{opacity:.5;cursor:default}
   /* examples (T3) — big, clear */
   .examples{margin:56px 0 10px}
   .examples h2{font-size:13px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;
@@ -107,6 +137,11 @@
       <!-- marketing copy (abstract advertising; NOT a measured claim — see I18N) -->
       <h1 data-i18n="hero">Claude가 코드를 짜고, 수학적으로 속도와 코드 품질을 끌어올리는 특수 제작 모델이 작동합니다.</h1>
       <p class="sub" data-i18n="sub">현존하는 모든 AI 대비 압도적인 속도와 정확성.</p>
+      <!-- mode-dependent tagline (T4): shifts subtly with the mode + theme. marketing copy. -->
+      <p class="mode-tagline" id="modeTagline">가장 빠르게 — 즉각 생성</p>
+      <!-- comparison line (T3.2): marketing copy, UNMEASURED → number is a [TBD] placeholder, hidden until measured -->
+      <p class="compare" id="compareLine" data-i18n="compare"
+         style="display:none">Codex와 Claude는 평균적으로 이보다 [TBD: 측정필요]% 느린 코드를 생성합니다.</p>
     </section>
 
     <div class="mode-select" id="modeSelect">
@@ -120,8 +155,17 @@
       </div>
     </div>
 
-    <section class="card">
-      <p data-i18n="placeholder" style="color:var(--txt-dim)">대화형 인터페이스가 여기에 들어갑니다.</p>
+    <section class="card chat">
+      <div class="msgs" id="msgs" data-i18n-empty="chat_empty"
+           data-empty="대화를 시작해 보세요. 예: “1부터 n까지의 합”"></div>
+      <div class="composer">
+        <input id="keyInput" type="password" autocomplete="off" data-i18n-ph="key_ph"
+               placeholder="Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)">
+        <div class="composer-row">
+          <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" placeholder="무엇을 만들까요?"></textarea>
+          <button id="sendBtn" data-i18n="send">실행</button>
+        </div>
+      </div>
     </section>
 
     <section class="examples">
@@ -180,6 +224,7 @@ const I18N = {
     // marketing copy — abstract advertising, NEVER mixed with measured results (PROVEN/ms).
     hero: "Claude가 코드를 짜고, 수학적으로 속도와 코드 품질을 끌어올리는 특수 제작 모델이 작동합니다.",
     sub: "현존하는 모든 AI 대비 압도적인 속도와 정확성.",
+    compare: "Codex와 Claude는 평균적으로 이보다 [TBD: 측정필요]% 느린 코드를 생성합니다.",
     ex_title: "예시",
     ex_req: "요청",
     ex_writes: "Claude 작성",
@@ -190,6 +235,21 @@ const I18N = {
     mode_normal_desc: "빠른 속도 · 흔한 경우 · 절대 틀리지 않음",
     mode_extended_name: "확장",
     mode_extended_desc: "더 깊이 · 더 많이 해결 · 동일하게 정확",
+    send: "실행",
+    chat_empty: "대화를 시작해 보세요. 예: “1부터 n까지의 합”",
+    key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
+    req_ph: "무엇을 만들까요?",
+    you: "당신",
+    tagline_normal: "가장 빠르게 — 즉각 생성",
+    tagline_extended: "가장 강력하게 — 깊은 검증과 최적화",
+    asst_normal: "일반 모드 · 빠른 경로",
+    asst_extended: "확장 모드 · 깊은 검증",
+    m_fast: "즉각 생성 (속도 우선)",
+    m_verified: "검증됨 (명세 대비)",
+    m_proven: "PROVEN ∀ (무한 ∀ 증명)",
+    m_optimized: "수학적 최적화",
+    m_unresolved_shallow: "미해결(얕음) — 확장 모드에서 더 깊이",
+    m_more_in_extended: "확장 모드에서 더 깊은 증명/최적화를 봅니다",
     note_key: "API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).",
     note_confirm: "화면의 시각·체감은 사용자 확인이 필요합니다.",
   },
@@ -197,6 +257,7 @@ const I18N = {
     // marketing copy — abstract advertising, NEVER mixed with measured results (PROVEN/ms).
     hero: "Claude writes the code; a purpose-built model mathematically raises its speed and quality.",
     sub: "Overwhelming speed and accuracy versus every AI in existence.",
+    compare: "Codex and Claude generate code on average [TBD: measure] % slower than this.",
     ex_title: "Examples",
     ex_req: "Request",
     ex_writes: "Claude writes",
@@ -207,6 +268,21 @@ const I18N = {
     mode_normal_desc: "Fast · common case · never wrong",
     mode_extended_name: "Extended",
     mode_extended_desc: "Deeper · solves more · equally correct",
+    send: "Run",
+    chat_empty: "Start a conversation. e.g. “sum from 1 to n”",
+    key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
+    req_ph: "What should we build?",
+    you: "You",
+    tagline_normal: "The fastest — instant generation",
+    tagline_extended: "The most powerful — deep verification & optimization",
+    asst_normal: "Normal mode · fast path",
+    asst_extended: "Extended mode · deep verification",
+    m_fast: "instant generation (speed first)",
+    m_verified: "verified (against the spec)",
+    m_proven: "PROVEN ∀ (unbounded ∀ proof)",
+    m_optimized: "Mathematical optimization",
+    m_unresolved_shallow: "unresolved (shallow) — go deeper in Extended mode",
+    m_more_in_extended: "Extended mode shows a deeper proof / optimization",
     note_key: "Your API key is entered each time and stored nowhere (level 1).",
     note_confirm: "The screen's look & feel needs user confirmation.",
   },
@@ -220,14 +296,29 @@ function setLang(lang){
     const k = el.getAttribute("data-i18n");
     if(I18N[lang][k] !== undefined) el.textContent = I18N[lang][k];
   });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el=>{
+    const k = el.getAttribute("data-i18n-ph");
+    if(I18N[lang][k] !== undefined) el.placeholder = I18N[lang][k];
+  });
+  document.querySelectorAll("[data-i18n-empty]").forEach(el=>{
+    const k = el.getAttribute("data-i18n-empty");
+    if(I18N[lang][k] !== undefined) el.setAttribute("data-empty", I18N[lang][k]);
+  });
   document.querySelectorAll("#langToggle button").forEach(b=>{
     b.classList.toggle("on", b.getAttribute("data-lang")===lang);
   });
+  try{ localStorage.setItem("haran_lang", lang); }catch(e){}   // persist LANGUAGE only (never the key)
+  refreshDynamic();
+}
+// mode-dependent text (T4): hero tagline shifts with the mode (alongside the color/theme transition)
+function refreshDynamic(){
+  const tl = document.getElementById("modeTagline");
+  if(tl) tl.textContent = (typeof MODE!=="undefined" && MODE==="extended")
+    ? T("tagline_extended") : T("tagline_normal");
 }
 document.getElementById("langToggle").addEventListener("click", e=>{
   const b = e.target.closest("button"); if(b) setLang(b.getAttribute("data-lang"));
 });
-setLang("ko");
 
 // ── two modes (T2): normal / extended — contrasting accent + click transition ───────────────
 let MODE = "normal";
@@ -241,9 +332,116 @@ function setMode(mode){
   });
 }
 document.getElementById("modeSelect").addEventListener("click", e=>{
-  const p = e.target.closest(".mode-pill"); if(p) setMode(p.getAttribute("data-mode"));
+  const p = e.target.closest(".mode-pill"); if(p){ setMode(p.getAttribute("data-mode")); refreshDynamic(); }
 });
-setMode("normal");
+
+// ── i18n helper + escaping ──────────────────────────────────────────────────────────────────
+function T(k){ return (I18N[LANG] && I18N[LANG][k] !== undefined) ? I18N[LANG][k] : k; }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// ── client-side SIMULATION of the agentic pipeline (standalone demo) ─────────────────────────
+// ★ This is a SIM for the offline demo: it mirrors agentic.py's mock (deterministic). The REAL
+//   write→verify→fix and the REAL proof tiers run server-side (server.py / HARAN). When a key +
+//   reachable backend exist (T6/T7) runAgentic() calls the real API instead. A SIM result is ALWAYS
+//   labeled (simtag) — never presented as a live/real proof. ★
+function mockAgentic(request, mode){
+  const _t0 = performance.now();
+  const r = (request || "").toLowerCase();
+  let ex;
+  if(/홀수|odd/.test(r))
+    ex = {code:"fn odds(n: Nat) -> Nat\n  ensures result = n*n\n{ fold k in 1..n { 2*k - 1 } }",
+          closed:"n²", proven:true};
+  else if(/합|sum|더해|add|plus/.test(r))
+    ex = {code:"fn sum(n: Nat) -> Nat\n  ensures result = n*(n+1)/2\n{ fold k in 1..n { k } }",
+          closed:"n·(n+1)/2", proven:true};
+  else
+    ex = {code:"fn f(n: Nat) -> Nat\n  ensures result = n\n{ n }", closed:null, proven:false};
+  const trace = ex.proven
+    ? [{label:"작성 / write", ok:false, detail:"반례 counterexample: n=1 → 2 ≠ 1"},
+       {label:"수정→검증 / fix→verify", ok:true, detail:"PROVEN ∀"}]
+    : [{label:"작성→검증 / write→verify", ok:true, detail:"TESTED (fuzz, no counterexample)"}];
+  return {source:"mock-sim", converged:true, iters:trace.length, status:"VERIFIED",
+          proof_tier: ex.proven ? "PROVEN" : "TESTED", code:ex.code,
+          closed:ex.closed, speedup: ex.closed ? "O(1)" : "none", trace,
+          sim_ms: Math.max(0.1, performance.now() - _t0).toFixed(1)};
+}
+
+// runAgentic: real backend when key+endpoint available (wired in T6/T7); else labeled SIM.
+async function runAgentic(request, mode, key, history){
+  // T6/T7 will branch here to fetch the FastAPI backend when `key` is provided. For now: SIM.
+  return mockAgentic(request, mode);
+}
+
+// ── rendering (T4: messages DIFFER by mode) ─────────────────────────────────────────────────
+const msgsEl = document.getElementById("msgs");
+function addMsg(role, inner){
+  const m = document.createElement("div");
+  m.className = "msg " + role;
+  m.innerHTML = `<div class="who">${role==="user"?esc(T("you")):"HARAN"}</div>`
+              + `<div class="bubble">${inner}</div>`;
+  msgsEl.appendChild(m);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+  return m;
+}
+function renderAssistant(res, mode){
+  const sim = res.source === "mock-sim" ? `<span class="simtag">SIM</span>` : "";
+  const tag = `<span class="modetag">${esc(mode==="extended"?T("asst_extended"):T("asst_normal"))}</span>${sim}`;
+  const code = `<div class="step"><span class="code">${esc(res.code)}</span></div>`;
+  if(mode === "normal"){
+    // NORMAL: SPEED framing — fast verdict, defers the deep proof/optimization (honest: not wrong, shallow).
+    // ms shown is the SIM's own elapsed time (labeled), NOT a product metric; real timing is server-side.
+    const verdict = res.converged
+      ? `✓ ${esc(T("m_verified"))}`
+      : `${esc(T("m_unresolved_shallow"))}`;
+    const ms = (res.sim_ms != null) ? ` <span class="simtag">~${res.sim_ms}ms (SIM)</span>` : "";
+    return `${tag}${code}`
+         + `<div class="step good"><span class="mk">⚡</span>${esc(T("m_fast"))}${ms}</div>`
+         + `<div class="step good"><span class="mk">✓</span>${verdict}</div>`
+         + `<div class="step">→ ${esc(T("m_more_in_extended"))}</div>`;
+  }
+  // EXTENDED: deep — full loop trace + proof tier + mathematical optimization
+  const steps = res.trace.map(s=>
+    `<div class="step ${s.ok?"good":"bad"}"><span class="mk">${s.ok?"✓":"✗"}</span>`
+    + `${esc(s.label)} — ${esc(s.detail)}</div>`).join("");
+  const tier = res.proof_tier === "PROVEN" ? T("m_proven") : (res.proof_tier + "");
+  let opt = "";
+  if(res.closed) opt = `<div class="step"><span class="mk">∑</span>${esc(T("m_optimized"))}: `
+                     + `${esc(res.closed)} · ${esc(res.speedup)} · <span class="tbd">×N [TBD: 측정필요]</span></div>`;
+  return `${tag}${code}${steps}`
+       + `<div class="step good"><span class="mk">✓</span>${esc(tier)}</div>${opt}`;
+}
+
+// ── send handler ────────────────────────────────────────────────────────────────────────────
+const reqEl = document.getElementById("reqInput");
+const keyEl = document.getElementById("keyInput");
+const sendBtn = document.getElementById("sendBtn");
+async function onSend(){
+  const request = reqEl.value.trim();
+  if(!request) return;
+  // LEVEL-1 key: read it ONLY for this request; never persisted (no localStorage/cookie write anywhere).
+  const key = keyEl.value.trim() || null;
+  addMsg("user", esc(request));
+  reqEl.value = "";
+  sendBtn.disabled = true;
+  try{
+    const res = await runAgentic(request, MODE, key, []);
+    addMsg("assistant", renderAssistant(res, MODE));
+  }catch(err){
+    addMsg("assistant", `<span class="simtag">error</span> ${esc(String(err))}`);
+  }finally{
+    sendBtn.disabled = false;
+  }
+}
+sendBtn.addEventListener("click", onSend);
+reqEl.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); onSend(); } });
+
+// ── init (runs after all definitions) ───────────────────────────────────────────────────────
+(function init(){
+  let lang = "ko";
+  try{ const s = localStorage.getItem("haran_lang"); if(s==="ko"||s==="en") lang = s; }catch(e){}
+  setMode("normal");     // default mode
+  setLang(lang);         // applies i18n + refreshDynamic (mode tagline)
+})();
 </script>
 </body>
 </html>
