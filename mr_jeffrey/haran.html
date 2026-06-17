@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  HARAN — conversational verified-coding web product (v23 / Part T).
+  MR.JEFFREY — conversational verified-coding web product (v23 / Part T).
   Single self-contained file (HTML+CSS+JS). Apple-dark aesthetic. Works standalone (built-in mock)
   and calls the FastAPI backend (server.py) when one is reachable.
 
@@ -15,7 +15,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HARAN</title>
+<title>MR.JEFFREY</title>
 <style>
   :root{
     --normal:#4a9eff; --extended:#b06cff;   /* mode accent hues */
@@ -159,7 +159,7 @@
   <div class="backdrop"></div>
   <div class="wrap">
     <header>
-      <div class="logo">HARAN<span class="dot">.</span></div>
+      <div class="logo">MR<span class="dot">.</span>JEFFREY</div>
       <div class="lang-toggle" id="langToggle" role="group" aria-label="language / 언어">
         <button data-lang="ko" class="on" aria-label="한국어">한국어</button>
         <button data-lang="en" aria-label="English">EN</button>
@@ -197,15 +197,14 @@
     </div>
 
     <section class="card chat">
-      <div class="msgs" id="msgs" data-i18n-empty="chat_empty"
-           data-empty="대화를 시작해 보세요. 예: “1부터 n까지의 합”"></div>
+      <div class="msgs" id="msgs"></div>
       <div class="composer">
         <input id="keyInput" type="password" autocomplete="off" data-i18n-ph="key_ph"
                aria-label="Claude API key — entered each time, stored nowhere"
                placeholder="Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)">
         <div class="composer-row">
           <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" aria-label="instruction / 지시"
-                    placeholder="무엇을 만들까요?"></textarea>
+                    placeholder="상상하는 모든 걸 시작해보세요"></textarea>
           <button id="sendBtn" data-i18n="send" aria-label="run / 실행">실행</button>
         </div>
         <!-- quick-action follow-ups (T5.3): appear after the first result; each is a follow-up instruction -->
@@ -221,10 +220,6 @@
     </section>
 
 
-    <p class="note">
-      <span data-i18n="note_key">API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).</span><br>
-      <span data-i18n="note_confirm">화면의 시각·체감은 사용자 확인이 필요합니다.</span>
-    </p>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -242,16 +237,15 @@ const I18N = {
     ex2: "JWT 인증 REST API 서버",
     ex3: "결제 처리 상태머신",
     ex4: "동시성 안전한 작업 큐",
-    scope_note: "이 요청은 큰 프로그램입니다. HARAN은 작은~중간 코드를 *명세 대비* 검증·최적화합니다 (Rice: 무에서 전체 생성은 불가). 핵심 로직과 명세(ensures)를 주시면 증명합니다.",
+    scope_note: "이 요청은 큰 프로그램입니다. MR.JEFFREY는 작은~중간 코드를 *명세 대비* 검증·최적화합니다 (Rice: 무에서 전체 생성은 불가). 핵심 로직과 명세(ensures)를 주시면 증명합니다.",
     placeholder: "대화형 인터페이스가 여기에 들어갑니다.",
     mode_normal_name: "일반",
     mode_normal_desc: "빠른 속도 · 흔한 경우 · 절대 틀리지 않음",
     mode_extended_name: "확장",
     mode_extended_desc: "더 깊이 · 더 많이 해결 · 동일하게 정확",
     send: "실행",
-    chat_empty: "대화를 시작해 보세요. 예: “1부터 n까지의 합”",
     key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
-    req_ph: "무엇을 만들까요?",
+    req_ph: "상상하는 모든 걸 시작해보세요",
     copied: "복사됨",
     quick_label: "빠른 지시",
     qa_faster: "더 빠르게",
@@ -271,8 +265,6 @@ const I18N = {
     m_optimized: "수학적 최적화",
     m_unresolved_shallow: "미해결(얕음) — 확장 모드에서 더 깊이",
     m_more_in_extended: "확장 모드에서 더 깊은 증명/최적화를 봅니다",
-    note_key: "API 키는 매번 입력하며 어디에도 저장하지 않습니다 (레벨 1).",
-    note_confirm: "화면의 시각·체감은 사용자 확인이 필요합니다.",
   },
   en: {
     // marketing copy — abstract advertising, NEVER mixed with measured results (PROVEN/ms).
@@ -284,16 +276,15 @@ const I18N = {
     ex2: "JWT-authenticated REST API server",
     ex3: "Payment processing state machine",
     ex4: "Concurrency-safe job queue",
-    scope_note: "This is a large program. HARAN verifies & optimizes small-to-medium code *against a spec* (Rice: full generation from nothing is impossible). Give the core logic + a spec (ensures) and it proves it.",
+    scope_note: "This is a large program. MR.JEFFREY verifies & optimizes small-to-medium code *against a spec* (Rice: full generation from nothing is impossible). Give the core logic + a spec (ensures) and it proves it.",
     placeholder: "The conversational interface goes here.",
     mode_normal_name: "Normal",
     mode_normal_desc: "Fast · common case · never wrong",
     mode_extended_name: "Extended",
     mode_extended_desc: "Deeper · solves more · equally correct",
     send: "Run",
-    chat_empty: "Start a conversation. e.g. “sum from 1 to n”",
     key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
-    req_ph: "What should we build?",
+    req_ph: "Start everything you imagine",
     copied: "Copied",
     quick_label: "Quick",
     qa_faster: "Make it faster",
@@ -313,8 +304,6 @@ const I18N = {
     m_optimized: "Mathematical optimization",
     m_unresolved_shallow: "unresolved (shallow) — go deeper in Extended mode",
     m_more_in_extended: "Extended mode shows a deeper proof / optimization",
-    note_key: "Your API key is entered each time and stored nowhere (level 1).",
-    note_confirm: "The screen's look & feel needs user confirmation.",
   },
 };
 let LANG = "ko";
@@ -439,7 +428,7 @@ const msgsEl = document.getElementById("msgs");
 function addMsg(role, inner){
   const m = document.createElement("div");
   m.className = "msg " + role;
-  m.innerHTML = `<div class="who">${role==="user"?esc(T("you")):"HARAN"}</div>`
+  m.innerHTML = `<div class="who">${role==="user"?esc(T("you")):"MR.JEFFREY"}</div>`
               + `<div class="bubble">${inner}</div>`;
   msgsEl.appendChild(m);
   msgsEl.scrollTop = msgsEl.scrollHeight;

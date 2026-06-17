@@ -75,7 +75,7 @@ def i18n_parity_msgs():
     ko, en = W.i18n_keys("ko"), W.i18n_keys("en")
     needed = {"tagline_normal", "tagline_extended", "asst_normal", "asst_extended", "m_fast",
               "m_verified", "m_proven", "m_optimized", "m_unresolved_shallow", "m_more_in_extended",
-              "compare", "send", "chat_empty", "key_ph", "req_ph"}
+              "compare", "send", "key_ph", "req_ph"}
     ok = needed <= ko and needed <= en and ko == en
     check("i18n_parity_msgs", ok, f"missing_ko={needed-ko} missing_en={needed-en} parity={ko==en}")
     print(f"      → all message fragments translated in ko & en; full i18n parity ({ko==en}).")
