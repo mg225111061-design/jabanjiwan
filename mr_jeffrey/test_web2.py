@@ -25,18 +25,32 @@ def mode_selector():
     print("      → 일반/확장 (normal/extended) pills + setMode click-switch present.")
 
 
+def _mode_var(mode, var, t):
+    import re
+    # the value of `var` inside the body.mode-<mode>{...} block
+    m = re.search(r"body\.mode-" + mode + r"\s*\{([^}]*)\}", t, re.S)
+    if not m:
+        return None
+    v = re.search(var + r"\s*:\s*([#a-zA-Z0-9_().,\- ]+?);", m.group(1))
+    return v.group(1).strip() if v else None
+
+
 def contrasting_colors():
     import re
     t = W.html()
     nrm = re.search(r"--normal\s*:\s*(#[0-9a-fA-F]{3,8})", t)
     ext = re.search(r"--extended\s*:\s*(#[0-9a-fA-F]{3,8})", t)
-    distinct = bool(nrm and ext and nrm.group(1).lower() != ext.group(1).lower())
-    classes = W.has("body.mode-normal") and W.has("body.mode-extended")
-    ok = distinct and classes
+    hues_distinct = bool(nrm and ext and nrm.group(1).lower() != ext.group(1).lower())
+    # ★ full THEME swap: bg / panel / txt differ between the two modes (not just accent) ★
+    bg_diff = _mode_var("normal", "--bg", t) != _mode_var("extended", "--bg", t)
+    panel_diff = _mode_var("normal", "--panel", t) != _mode_var("extended", "--panel", t)
+    txt_diff = _mode_var("normal", "--txt", t) != _mode_var("extended", "--txt", t)
+    ok = hues_distinct and bg_diff and panel_diff and txt_diff
     check("contrasting_colors", ok,
-          f"normal={nrm and nrm.group(1)} extended={ext and ext.group(1)} distinct={distinct} classes={classes}")
-    print(f"      → normal={nrm.group(1)} vs extended={ext.group(1)} (distinct hues); body.mode-* swaps "
-          "--accent. [user-confirm: the contrast reads clearly + feels right]")
+          f"hues={hues_distinct} bg={bg_diff} panel={panel_diff} txt={txt_diff}")
+    print(f"      → FULL theme swap: normal bg {_mode_var('normal','--bg',t)} (cool) vs extended "
+          f"{_mode_var('extended','--bg',t)} (warm); panel/txt/accent all shift. "
+          "[user-confirm: the contrast reads clearly + stays readable]")
 
 
 def click_transition():

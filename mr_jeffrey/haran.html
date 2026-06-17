@@ -18,22 +18,33 @@
 <title>HARAN</title>
 <style>
   :root{
-    --bg:#0a0a0c; --panel:#141417; --panel-2:#1c1c21; --line:#2a2a31;
-    --txt:#f5f5f7; --txt-dim:#a1a1aa; --txt-faint:#6b6b75;
-    /* two-mode accents (contrast lands in T2) */
-    --normal:#4a9eff; --extended:#b06cff; --accent:var(--normal);
+    --normal:#4a9eff; --extended:#b06cff;   /* mode accent hues */
     --ok:#34d399; --warn:#fbbf24; --bad:#f87171;
     --radius:22px; --radius-sm:14px; --radius-lg:30px;
     --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,Roboto,sans-serif;
     --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    /* default palette = NORMAL (cool) until a mode class is applied */
+    --bg:#0a0e16; --panel:#121826; --panel-2:#1a2233; --line:#26304a;
+    --txt:#eef2fb; --txt-dim:#9aa6c2; --txt-faint:#5f6b86; --accent:var(--normal);
+  }
+  /* ★ T2: two contrasting THEMES (not just accent) — cool↔warm, both Apple-dark, high text contrast ★ */
+  body.mode-normal{   /* cool, crisp — 'fast' */
+    --bg:#0a0e16; --panel:#121826; --panel-2:#1a2233; --line:#26304a;
+    --txt:#eef2fb; --txt-dim:#9aa6c2; --txt-faint:#5f6b86; --accent:var(--normal);
+  }
+  body.mode-extended{ /* warm, deep — 'powerful' */
+    --bg:#0e0a14; --panel:#181020; --panel-2:#21172e; --line:#352843;
+    --txt:#f6eefb; --txt-dim:#bda6c8; --txt-faint:#7a6385; --accent:var(--extended);
+  }
+  /* smooth full-theme morph on mode switch (no flicker) */
+  body, .card, .chat, .msgs, .bubble, .code, .composer, .composer input, .composer textarea,
+  .mode-pill, .example, .lang-toggle, .lang-toggle button, .modetag, .hero .mode-tagline{
+    transition: background-color .5s ease, color .45s ease, border-color .5s ease;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--txt);font-family:var(--font);
     -webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh;
     transition:background .5s ease}
-  /* two modes — contrasting accents (T2). normal = cool blue, extended = warm purple. */
-  body.mode-normal{--accent:var(--normal)}
-  body.mode-extended{--accent:var(--extended)}
   .backdrop{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.55;
     transition:background .6s ease;
     background:radial-gradient(58% 46% at 50% -4%,
