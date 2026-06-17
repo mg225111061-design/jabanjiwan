@@ -133,6 +133,26 @@
   /* footer note */
   .note{margin-top:34px;font-size:12.5px;color:var(--txt-faint);text-align:center;line-height:1.7}
   .note code{font-family:var(--mono);color:var(--txt-dim)}
+  /* T10 autonomous polish: accessibility, click-to-copy, responsive, reduced-motion */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+  .code{cursor:pointer}
+  .code:hover{border-color:var(--accent)}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(18px);
+    background:var(--panel);border:1px solid var(--accent);color:var(--txt);padding:10px 18px;
+    border-radius:999px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;z-index:50;
+    transition:opacity .25s ease,transform .25s ease}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (max-width:640px){
+    .wrap{padding:18px 14px 60px}
+    .hero h1{font-size:25px}
+    .mode-select{flex-direction:column}
+    .mode-pill{flex:1 1 auto}
+    .composer-row{flex-direction:column}
+    .composer button{padding:13px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important; animation:none !important}
+  }
 </style>
 </head>
 <body>
@@ -140,9 +160,9 @@
   <div class="wrap">
     <header>
       <div class="logo">HARAN<span class="dot">.</span></div>
-      <div class="lang-toggle" id="langToggle">
-        <button data-lang="ko" class="on">한국어</button>
-        <button data-lang="en">EN</button>
+      <div class="lang-toggle" id="langToggle" role="group" aria-label="language / 언어">
+        <button data-lang="ko" class="on" aria-label="한국어">한국어</button>
+        <button data-lang="en" aria-label="English">EN</button>
       </div>
     </header>
 
@@ -181,10 +201,12 @@
            data-empty="대화를 시작해 보세요. 예: “1부터 n까지의 합”"></div>
       <div class="composer">
         <input id="keyInput" type="password" autocomplete="off" data-i18n-ph="key_ph"
+               aria-label="Claude API key — entered each time, stored nowhere"
                placeholder="Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)">
         <div class="composer-row">
-          <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" placeholder="무엇을 만들까요?"></textarea>
-          <button id="sendBtn" data-i18n="send">실행</button>
+          <textarea id="reqInput" rows="1" data-i18n-ph="req_ph" aria-label="instruction / 지시"
+                    placeholder="무엇을 만들까요?"></textarea>
+          <button id="sendBtn" data-i18n="send" aria-label="run / 실행">실행</button>
         </div>
         <!-- quick-action follow-ups (T5.3): appear after the first result; each is a follow-up instruction -->
         <div class="quick" id="quickActions" style="display:none">
@@ -204,6 +226,7 @@
       <span data-i18n="note_confirm">화면의 시각·체감은 사용자 확인이 필요합니다.</span>
     </p>
   </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 "use strict";
@@ -229,6 +252,7 @@ const I18N = {
     chat_empty: "대화를 시작해 보세요. 예: “1부터 n까지의 합”",
     key_ph: "Claude API 키 — 매번 입력, 어디에도 저장 안 함 (선택: 없으면 시뮬레이션)",
     req_ph: "무엇을 만들까요?",
+    copied: "복사됨",
     quick_label: "빠른 지시",
     qa_faster: "더 빠르게",
     qa_bug: "버그 고쳐",
@@ -270,6 +294,7 @@ const I18N = {
     chat_empty: "Start a conversation. e.g. “sum from 1 to n”",
     key_ph: "Claude API key — entered each time, stored nowhere (optional: simulation if empty)",
     req_ph: "What should we build?",
+    copied: "Copied",
     quick_label: "Quick",
     qa_faster: "Make it faster",
     qa_bug: "Fix the bug",
@@ -530,7 +555,7 @@ async function onSend(override){
   const key = keyEl.value.trim() || null;
   addMsg("user", esc(request));
   reqEl.value = "";
-  sendBtn.disabled = true;
+  sendBtn.disabled = true; sendBtn.textContent = "…";   // T10: loading state
   try{
     if(BACKEND){
       const onEvent = streamRender(MODE);                 // real SSE: live token→verify→fix→done
@@ -543,9 +568,19 @@ async function onSend(override){
     try{ await _mockTurn(request, key); }                 // backend unreachable → mock fallback
     catch(e2){ addMsg("assistant", `<span class="simtag">error</span> ${esc(String(e2))}`); }
   }finally{
-    sendBtn.disabled = false;
+    sendBtn.disabled = false; sendBtn.textContent = T("send");
   }
 }
+// T10: click any code block to copy it (with a toast); accessible status via aria-live
+const toastEl = document.getElementById("toast");
+function showToast(msg){ toastEl.textContent = msg; toastEl.classList.add("show");
+  setTimeout(()=>toastEl.classList.remove("show"), 1400); }
+msgsEl.addEventListener("click", e=>{
+  const c = e.target.closest(".code");
+  if(c && c.textContent.trim() && navigator.clipboard){
+    navigator.clipboard.writeText(c.textContent).then(()=>showToast(T("copied"))).catch(()=>{});
+  }
+});
 sendBtn.addEventListener("click", ()=>onSend());
 reqEl.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); onSend(); } });
 // example chips → populate the input (T3.3)
