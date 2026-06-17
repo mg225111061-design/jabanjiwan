@@ -28,6 +28,15 @@ import claude_agent as CA
 import haran_cache as HC
 import intent as IN
 
+# Expose `Request` at MODULE scope so FastAPI can resolve the route handlers' string annotations
+# (PEP 563 / `from __future__ import annotations` turns `req: Request` into the string "Request",
+# which FastAPI resolves against this module's globals — not create_app's locals). Guarded so the
+# module still imports when FastAPI isn't installed.
+try:
+    from fastapi import Request
+except Exception:   # noqa: BLE001
+    Request = None
+
 HARAN_HTML = Path(__file__).with_name("haran.html")
 
 # ── intent-gap / scope honesty (rule 5) ─────────────────────────────────────────────────────────
@@ -253,6 +262,10 @@ def create_app():
     @app.get("/", response_class=HTMLResponse)
     async def index():                                          # noqa: ANN202
         return HARAN_HTML.read_text(encoding="utf-8")
+
+    @app.get("/health")                                        # deploy health check (Cloud Run/Render)
+    async def health():                                        # noqa: ANN202
+        return {"ok": True, "service": "mrjeffrey"}
 
     @app.post("/api/generate")                                 # routes through intent (U4): code|chat|ask
     async def generate(req: Request):                          # noqa: ANN202
