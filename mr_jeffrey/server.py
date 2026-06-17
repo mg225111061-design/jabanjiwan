@@ -18,13 +18,34 @@ wires the routes — so this module imports fine in any environment (mirrors cla
 from __future__ import annotations
 
 import importlib.util
+import json
+import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Iterator, List, Optional, Tuple
 
 import agentic as AG
 import claude_agent as CA
 
 HARAN_HTML = Path(__file__).with_name("haran.html")
+
+# ── intent-gap / scope honesty (rule 5) ─────────────────────────────────────────────────────────
+# Whole-program requests can't be generated-from-nothing and verified (Rice). HARAN verifies small~
+# medium code AGAINST A SPEC. Detect whole-program asks by their nouns and return an honest scope reply
+# instead of fake-verifying. (Keyword-based — NOT length-based; long but tractable requests are fine.)
+_SCOPE_RE = re.compile(r"백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|"
+                       r"\bapi\b|jwt|결제|payment", re.I)
+SCOPE_MESSAGE = ("scope: HARAN verifies & optimizes small~medium code AGAINST A SPEC (Rice: full "
+                 "generation from nothing is impossible). Provide the core logic + a spec (ensures).")
+
+
+def is_scope(prompt: str) -> bool:
+    return bool(_SCOPE_RE.search(prompt or ""))
+
+
+def _scope_result(prompt: str, mode: str) -> dict:
+    return {"request": prompt, "mode": mode, "source": "mock-sim", "scope": True, "converged": False,
+            "status": "SCOPE", "code": None, "proof_tier": "(scope)", "optimization": None,
+            "ms": 0.0, "history_len": 0, "trace": [], "message": SCOPE_MESSAGE}
 
 # Module invariant: the key is NEVER stored here. Stays None for the process lifetime (test asserts it).
 _KEY_STORE = None
@@ -68,10 +89,12 @@ def handle_generate(payload: Optional[dict]) -> dict:
     p = payload or {}
     prompt = str(p.get("prompt", "")).strip()
     mode = p.get("mode", "normal")
-    history = parse_history(p.get("history"))
-    api_key = p.get("apiKey") or None          # read locally only
     if not prompt:
         return {"error": True, "message": "empty prompt"}
+    if is_scope(prompt):                         # intent-gap honesty: don't fake-verify a whole program
+        return _scope_result(prompt, mode)
+    history = parse_history(p.get("history"))
+    api_key = p.get("apiKey") or None          # read locally only
     try:
         res = AG.agentic_code(prompt, mode, api_key, history=history)
         return to_result_dict(res)
@@ -81,6 +104,79 @@ def handle_generate(payload: Optional[dict]) -> dict:
         api_key = None       # drop our binding immediately (the client re-supplies per request)
 
 
+# ---------------------------------------------------------------------------------------------------
+# T7 — SSE streaming. The verification RESULTS are real (from agentic_code); the event sequence is
+# emitted around them so the UI shows a live token→code_done→verify→(fix)→done flow. Hard cases emit a
+# 'verifying' (⏳) status first, then resolve (v21 R5 background → non-blocking status; honest: here the
+# pipeline is fast/synchronous, so 'verifying' frames the resolved result rather than truly deferring).
+# ---------------------------------------------------------------------------------------------------
+
+def sse_event(obj: dict) -> str:
+    """One SSE message: a single JSON object on a `data:` line, terminated by a blank line."""
+    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
+def _chunks(s: str, n: int = 16) -> List[str]:
+    return [s[i:i + n] for i in range(0, len(s), n)] or [""]
+
+
+def stream_events(payload: Optional[dict]) -> Iterator[str]:
+    """T7 core: yield the SSE event stream for one request. LEVEL-1 key (used once, dropped, never
+    stored/logged). The proof results come from agentic_code; the stream shape mirrors the UI flow."""
+    p = payload or {}
+    prompt = str(p.get("prompt", "")).strip()
+    mode = p.get("mode", "normal")
+    if not prompt:
+        yield sse_event({"type": "error", "message": "empty prompt"})
+        return
+    if is_scope(prompt):                         # intent-gap honesty: scope note, no fake verify
+        yield sse_event({"type": "note", "text": SCOPE_MESSAGE})
+        yield sse_event({"type": "done", "summary": _scope_result(prompt, mode)})
+        return
+    history = parse_history(p.get("history"))
+    api_key = p.get("apiKey") or None
+    try:
+        res = AG.agentic_code(prompt, mode, api_key, history=history)
+    except Exception as e:   # noqa: BLE001 — redact, never leak the key
+        yield sse_event({"type": "error", "message": f"{type(e).__name__}: {CA.redact_key(str(e))}"})
+        return
+    finally:
+        api_key = None
+
+    rd = to_result_dict(res)
+    # scope / no-code (intent-gap honesty): emit a note, then done — no fake verification
+    if not rd["code"]:
+        yield sse_event({"type": "note", "text": "scope: small~medium code verified against a spec"})
+        yield sse_event({"type": "done", "summary": rd})
+        return
+
+    for chunk in _chunks(rd["code"]):                       # token stream of the generated code
+        yield sse_event({"type": "token", "text": chunk})
+    yield sse_event({"type": "code_done", "code": rd["code"]})
+
+    attempt = 0
+    for st in rd["trace"]:                                  # one verify (+fix) per loop iteration
+        yield sse_event({"type": "verify", "status": "verifying", "name": res.request})
+        if st["status"] == "VERIFIED":
+            yield sse_event({"type": "verify", "status": "proven", "time": rd["ms"]})
+        elif st["status"] == "FAILED":
+            yield sse_event({"type": "verify", "status": "refuted", "counterexample": st["counterexample"]})
+            attempt += 1
+            yield sse_event({"type": "fix", "counterexample": st["counterexample"], "attempt": attempt})
+            yield sse_event({"type": "fixed", "code": rd["code"]})
+        else:
+            yield sse_event({"type": "verify", "status": "shallow"})
+
+    # final proof tier + (if any) the mathematical optimization
+    yield sse_event({"type": "verify",
+                     "status": "proven" if res.proof_tier == "PROVEN" else "shallow",
+                     "tier": res.proof_tier})
+    opt = rd["optimization"]
+    if opt and opt["optimized"]:
+        yield sse_event({"type": "optimized", "closed_form": opt["closed_form"], "speedup": opt["speedup"]})
+    yield sse_event({"type": "done", "summary": rd})
+
+
 def _fastapi_available() -> bool:
     return importlib.util.find_spec("fastapi") is not None
 
@@ -88,7 +184,7 @@ def _fastapi_available() -> bool:
 def create_app():
     """Wire the FastAPI app (lazy import). Routes delegate to the dependency-free handlers above."""
     from fastapi import FastAPI, Request                       # noqa: PLC0415 (lazy by design)
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
     app = FastAPI(title="HARAN", docs_url=None, redoc_url=None)
 
@@ -100,6 +196,12 @@ def create_app():
     async def generate(req: Request):                          # noqa: ANN202
         payload = await req.json()
         return JSONResponse(handle_generate(payload))
+
+    @app.post("/api/stream")                                    # T7: SSE
+    async def stream(req: Request):                            # noqa: ANN202
+        payload = await req.json()
+        return StreamingResponse(stream_events(payload), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     return app
 

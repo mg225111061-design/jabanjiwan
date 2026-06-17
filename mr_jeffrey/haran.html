@@ -241,6 +241,7 @@ const I18N = {
     asst_normal: "일반 모드 · 빠른 경로",
     asst_extended: "확장 모드 · 깊은 검증",
     m_fast: "즉각 생성 (속도 우선)",
+    verifying: "검증 중…",
     m_verified: "검증됨 (명세 대비)",
     m_proven: "PROVEN ∀ (무한 ∀ 증명)",
     m_optimized: "수학적 최적화",
@@ -281,6 +282,7 @@ const I18N = {
     asst_normal: "Normal mode · fast path",
     asst_extended: "Extended mode · deep verification",
     m_fast: "instant generation (speed first)",
+    verifying: "verifying…",
     m_verified: "verified (against the spec)",
     m_proven: "PROVEN ∀ (unbounded ∀ proof)",
     m_optimized: "Mathematical optimization",
@@ -377,8 +379,7 @@ function mockAgentic(request, mode, history){
   }
   // ★ scope/intent-gap honesty (rule 5): big whole-program requests can't be generated from nothing
   //   (Rice). HARAN verifies small~medium code AGAINST A SPEC. Say so — never fake-verify a backend. ★
-  if(/백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|결제|payment/i.test(r)
-     || (request || "").length > 40){
+  if(/백엔드|서버|backend|server|큐|queue|상태\s*머신|state\s*machine|\bapi\b|jwt|결제|payment/i.test(r)){
     return {source:"mock-sim", scope:true, converged:false, status:"SCOPE", proof_tier:"(scope)",
             code:null, closed:null, speedup:"none", iters:0, trace:[],
             sim_ms: Math.max(0.1, performance.now() - _t0).toFixed(1)};
@@ -451,6 +452,61 @@ function renderAssistant(res, mode){
        + `<div class="step good"><span class="mk">✓</span>${esc(tier)}</div>${opt}`;
 }
 
+// ── SSE streaming (T7): consume the backend's live token→verify→fix→done stream ─────────────
+const BACKEND = location.protocol === "http:" || location.protocol === "https:";  // served by FastAPI?
+async function streamAgentic(request, mode, key, history, onEvent){
+  const resp = await fetch("/api/stream", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({prompt:request, mode, apiKey:key, history})});
+  if(!resp.ok || !resp.body) throw new Error("stream unavailable ("+resp.status+")");
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = "", summary = null;
+  for(;;){
+    const {value, done} = await reader.read(); if(done) break;
+    buf += dec.decode(value, {stream:true});
+    let i;
+    while((i = buf.indexOf("\n\n")) >= 0){
+      const line = buf.slice(0, i).split("\n").find(l=>l.startsWith("data:"));
+      buf = buf.slice(i + 2);
+      if(line){ const ev = JSON.parse(line.slice(5).trim()); onEvent(ev); if(ev.type==="done") summary = ev.summary; }
+    }
+  }
+  return summary;
+}
+// progressive renderer: builds one assistant bubble up as events arrive
+function streamRender(mode){
+  const m = addMsg("assistant", "");
+  const bubble = m.querySelector(".bubble");
+  const tagEl = document.createElement("div");
+  tagEl.innerHTML = `<span class="modetag">${esc(mode==="extended"?T("asst_extended"):T("asst_normal"))}</span>`
+                  + `<span class="simtag" data-tag>···</span>`;
+  const codeEl = document.createElement("div"); codeEl.className = "step";
+  const codeSpan = document.createElement("span"); codeSpan.className = "code"; codeEl.appendChild(codeSpan);
+  const steps = document.createElement("div");
+  bubble.append(tagEl, codeEl, steps);
+  let code = "";
+  const step = (mk, text, cls)=>{ const d=document.createElement("div"); d.className="step "+(cls||"");
+    d.innerHTML=`<span class="mk">${mk}</span>${esc(text)}`; steps.appendChild(d);
+    msgsEl.scrollTop = msgsEl.scrollHeight; };
+  return ev=>{
+    if(ev.type==="token"){ code += ev.text; codeSpan.textContent = code; }
+    else if(ev.type==="code_done"){ code = ev.code; codeSpan.textContent = code; }
+    else if(ev.type==="verify"){
+      if(ev.status==="verifying") step("⏳", T("verifying"));
+      else if(ev.status==="proven") step("✓", (ev.tier?ev.tier+" · ":"")+T("m_proven"), "good");
+      else if(ev.status==="refuted") step("✗", "반례 / counterexample: "+JSON.stringify(ev.counterexample||{}), "bad");
+      else step("•", T("m_unresolved_shallow"));
+    }
+    else if(ev.type==="fix") step("↻", "fix attempt "+ev.attempt);
+    else if(ev.type==="fixed"){ code = ev.code; codeSpan.textContent = code; }
+    else if(ev.type==="optimized") step("∑", T("m_optimized")+": "+ev.closed_form+" · "+ev.speedup+" · ×N [TBD: 측정필요]");
+    else if(ev.type==="note") step("▢", T("scope_note"));
+    else if(ev.type==="error") step("⚠", ev.message, "bad");
+    else if(ev.type==="done"){ const tg=tagEl.querySelector("[data-tag]");
+      if(tg) tg.textContent = (ev.summary && ev.summary.source==="claude-live") ? "LIVE" : "SIM"; }
+  };
+}
+
 // ── send handler + the continuous feedback loop (T5: the heart) ──────────────────────────────
 const reqEl = document.getElementById("reqInput");
 const keyEl = document.getElementById("keyInput");
@@ -458,6 +514,15 @@ const sendBtn = document.getElementById("sendBtn");
 const quickEl = document.getElementById("quickActions");
 // conversation HISTORY accumulates across rounds → threaded as context every round (server uses it, T8)
 const HISTORY = [];
+function _accumulate(request, summary){
+  if(summary && !summary.scope && summary.code) HISTORY.push({request, code:summary.code});
+  quickEl.style.display = "flex";
+}
+async function _mockTurn(request, key){   // standalone / fallback path (no backend)
+  const res = await runAgentic(request, MODE, key, HISTORY.slice());
+  addMsg("assistant", renderAssistant(res, MODE));
+  _accumulate(request, res);
+}
 async function onSend(override){
   const request = (override != null ? override : reqEl.value).trim();
   if(!request) return;
@@ -467,12 +532,16 @@ async function onSend(override){
   reqEl.value = "";
   sendBtn.disabled = true;
   try{
-    const res = await runAgentic(request, MODE, key, HISTORY.slice());   // pass accumulated context
-    addMsg("assistant", renderAssistant(res, MODE));
-    if(!res.scope && res.code) HISTORY.push({request, code:res.code});   // accumulate the round
-    quickEl.style.display = "flex";                                      // enable quick follow-ups
+    if(BACKEND){
+      const onEvent = streamRender(MODE);                 // real SSE: live token→verify→fix→done
+      const summary = await streamAgentic(request, MODE, key, HISTORY.slice(), onEvent);
+      _accumulate(request, summary);
+    } else {
+      await _mockTurn(request, key);                      // standalone (file://): labeled SIM mock
+    }
   }catch(err){
-    addMsg("assistant", `<span class="simtag">error</span> ${esc(String(err))}`);
+    try{ await _mockTurn(request, key); }                 // backend unreachable → mock fallback
+    catch(e2){ addMsg("assistant", `<span class="simtag">error</span> ${esc(String(e2))}`); }
   }finally{
     sendBtn.disabled = false;
   }
